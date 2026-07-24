@@ -112,7 +112,7 @@ const PREFERRED_DATA_COLUMNS = [
 // funciona só localmente nesta sessão, sem salvar nem sincronizar com ninguém.
 // ----------------------------------------------------------------------------
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxGaWTgGyvbyArFJ1ZwkNJv36hmE3vsDpM4TC8IXcWC6RoUcOykHVKcg2FGp9wgG6aVRA/exec";
-const POLL_INTERVAL_MS = 8000;
+const POLL_INTERVAL_MS = 3000;
 
 function isBackendConfigured() {
   return Boolean(APPS_SCRIPT_URL && APPS_SCRIPT_URL.startsWith("http"));
@@ -322,7 +322,7 @@ function App() {
       } finally {
         setSyncing(false);
       }
-    }, 300);
+    }, 120);
   }, []);
 
   function update(patchFn) {
