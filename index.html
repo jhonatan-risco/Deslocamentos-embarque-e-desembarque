@@ -207,6 +207,35 @@ function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
 
+const LIST_HEADER_WORDS = ["empresa", "placa", "liminar", "abrafrec", "atipesp", "própria", "propria", "company", "nome"];
+
+// Reads a CSV/XLSX upload and flattens every non-empty cell into a deduped
+// list of trimmed strings, skipping anything that looks like a header label.
+async function parseSimpleList(file) {
+  let rows = [];
+  if (/\.xlsx?$/i.test(file.name)) {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array" });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+  } else {
+    const text = await file.text();
+    const result = Papa.parse(text, { skipEmptyLines: true });
+    rows = result.data;
+  }
+  const values = [];
+  for (const row of rows) {
+    for (const cell of row) {
+      const v = String(cell || "").trim();
+      if (!v) continue;
+      const looksLikeHeader = LIST_HEADER_WORDS.some((w) => v.toLowerCase() === w || v.toLowerCase().includes(w));
+      if (looksLikeHeader && v.length < 40) continue;
+      values.push(v);
+    }
+  }
+  return Array.from(new Set(values));
+}
+
 function defaultState() {
   return {
     batches: [],
@@ -235,6 +264,7 @@ function App() {
   const [columnsPickerOpen, setColumnsPickerOpen] = useState(false);
   const [drawerRow, setDrawerRow] = useState(null); // { batchId, rowId }
   const [search, setSearch] = useState("");
+  const [columnFilters, setColumnFilters] = useState({});
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState({ done: 0, total: 0 });
 
@@ -305,6 +335,11 @@ function App() {
 
   const { batches, currentBatchId, optionLists, liminarRefLists, sugestoes, visibleColsByBatch, shortLinks } = state;
   const currentBatch = batches.find((b) => b.id === currentBatchId) || null;
+
+  useEffect(() => {
+    setColumnFilters({});
+    setSearch("");
+  }, [currentBatchId]);
 
   function updateBatchRows(batchId, updater) {
     update((prev) => ({
@@ -410,6 +445,28 @@ function App() {
   function removeRefEntry(listKey, value) {
     update((prev) => ({ ...prev, liminarRefLists: { ...prev.liminarRefLists, [listKey]: prev.liminarRefLists[listKey].filter((x) => x !== value) } }));
   }
+  function bulkSetRefList(listKey, values, mode) {
+    // Updates the reference list and re-suggests Liminar for every row that
+    // hasn't been manually overridden by an analyst, across all batches.
+    setState((prev) => {
+      const updatedRefLists = {
+        ...prev.liminarRefLists,
+        [listKey]: mode === "replace" ? values : Array.from(new Set([...(prev.liminarRefLists[listKey] || []), ...values])),
+      };
+      const nextBatches = prev.batches.map((b) => ({
+        ...b,
+        rows: b.rows.map((r) => {
+          if (r.liminarManual) return r;
+          const empresa = getField(r._raw, FIELD_CANDIDATES.empresa);
+          const placa = getField(r._raw, FIELD_CANDIDATES.placa);
+          return { ...r, liminar: suggestLiminar(empresa, placa, updatedRefLists) };
+        }),
+      }));
+      const next = { ...prev, liminarRefLists: updatedRefLists, batches: nextBatches };
+      persist(next);
+      return next;
+    });
+  }
   function addSugestao(cityKey, value) {
     if (!value.trim()) return;
     update((prev) => ({ ...prev, sugestoes: { ...prev.sugestoes, [cityKey]: [...(prev.sugestoes[cityKey] || []), value.trim()] } }));
@@ -430,15 +487,51 @@ function App() {
 
   const filteredRows = useMemo(() => {
     if (!currentBatch) return [];
-    if (!search.trim()) return currentBatch.rows;
-    const q = norm(search);
-    return currentBatch.rows.filter((r) => {
-      const empresa = norm(getField(r._raw, FIELD_CANDIDATES.empresa));
-      const placa = norm(getField(r._raw, FIELD_CANDIDATES.placa));
-      const link = norm(getField(r._raw, FIELD_CANDIDATES.linkGrupo));
-      return empresa.includes(q) || placa.includes(q) || link.includes(q) || norm(r.analista1).includes(q);
-    });
-  }, [currentBatch, search]);
+    let rows = currentBatch.rows;
+
+    if (search.trim()) {
+      const q = norm(search);
+      rows = rows.filter((r) => {
+        const empresa = norm(getField(r._raw, FIELD_CANDIDATES.empresa));
+        const placa = norm(getField(r._raw, FIELD_CANDIDATES.placa));
+        const link = norm(getField(r._raw, FIELD_CANDIDATES.linkGrupo));
+        return empresa.includes(q) || placa.includes(q) || link.includes(q) || norm(r.analista1).includes(q);
+      });
+    }
+
+    const activeFilterKeys = Object.keys(columnFilters).filter((k) => columnFilters[k] !== "" && columnFilters[k] !== undefined);
+    if (activeFilterKeys.length) {
+      rows = rows.filter((r) =>
+        activeFilterKeys.every((key) => {
+          const val = columnFilters[key];
+          if (key === "motoristaCiente" || key === "enviado") {
+            const boolVal = key === "motoristaCiente" ? r.motoristaCiente : r.enviado;
+            return val === "sim" ? !!boolVal : !boolVal;
+          }
+          if (["analista1", "analista2", "statusInicial", "liminar"].includes(key)) {
+            return (r[key] || "(vazio)") === val;
+          }
+          if (["novoLocalSp", "novoLocalCampinas", "novoLocalSjc", "novoLocalAmericana"].includes(key)) {
+            const filled = Boolean(r[key] && r[key].trim());
+            return val === "preenchido" ? filled : !filled;
+          }
+          // dynamic imported data column: substring match
+          return norm(r._raw[key]).includes(norm(val));
+        })
+      );
+    }
+
+    return rows;
+  }, [currentBatch, search, columnFilters]);
+
+  const activeFilterCount = Object.values(columnFilters).filter((v) => v !== "" && v !== undefined).length;
+
+  function setColumnFilter(key, value) {
+    setColumnFilters((prev) => ({ ...prev, [key]: value }));
+  }
+  function clearColumnFilters() {
+    setColumnFilters({});
+  }
 
   async function handleExportBatch() {
     if (!currentBatch) return;
@@ -613,6 +706,14 @@ function App() {
               onClose={() => setColumnsPickerOpen(false)}
             />
           )}
+          {activeFilterCount > 0 && (
+            <button
+              onClick={clearColumnFilters}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, border: "1px solid #D8D6CE", background: "#fff", borderRadius: 7, padding: "6px 10px", cursor: "pointer", color: "#54524A" }}
+            >
+              <X size={12} /> Limpar filtros ({activeFilterCount})
+            </button>
+          )}
           <span style={{ fontSize: 12, color: "#8A8A82", marginLeft: "auto" }}>
             {filteredRows.length} de {currentBatch.rows.length} linhas
           </span>
@@ -628,6 +729,8 @@ function App() {
             visibleCols={visibleCols}
             optionLists={optionLists}
             sugestoes={sugestoes}
+            columnFilters={columnFilters}
+            onSetColumnFilter={setColumnFilter}
             onUpdateRow={(rowId, patch) => updateRow(currentBatch.id, rowId, patch)}
             onOpenDrawer={(rowId) => {
               editingRef.current = true;
@@ -648,6 +751,7 @@ function App() {
           onRemoveOption={removeOption}
           onAddRef={addRefEntry}
           onRemoveRef={removeRefEntry}
+          onBulkSetRef={bulkSetRefList}
           onAddSugestao={addSugestao}
           onRemoveSugestao={removeSugestao}
           onClose={() => {
@@ -728,12 +832,41 @@ function ColumnsPicker({ columns, visible, onChange, onClose }) {
 // Data table
 // ============================================================================
 
-const th = { padding: "8px 10px", fontWeight: 600, color: "#54524A", whiteSpace: "nowrap", borderBottom: "1px solid #E4E2DC", textAlign: "left", background: "#F7F6F2", position: "sticky", top: 0 };
+const th = { padding: "8px 10px", fontWeight: 600, color: "#54524A", whiteSpace: "nowrap", borderBottom: "1px solid #E4E2DC", textAlign: "left", background: "#F7F6F2", position: "sticky", top: 0, zIndex: 2 };
+const thFilter = { padding: "4px 10px 6px", borderBottom: "1px solid #E4E2DC", background: "#FBFBFA", position: "sticky", top: 33, zIndex: 2 };
 const td = { padding: "6px 10px", borderBottom: "1px solid #EFEDE6", whiteSpace: "nowrap" };
 
 const CITY_FIELD_MAP = { sp: "novoLocalSp", campinas: "novoLocalCampinas", sjc: "novoLocalSjc", americana: "novoLocalAmericana" };
 
-function DataTable({ rows, visibleCols, optionLists, sugestoes, onUpdateRow, onOpenDrawer, onAddOption, onAddSugestao }) {
+function FilterSelect({ value, onChange, options, allLabel = "Todos" }) {
+  return (
+    <select
+      value={value || ""}
+      onChange={(e) => onChange(e.target.value)}
+      style={{ fontSize: 11.5, padding: "3px 4px", borderRadius: 5, border: "1px solid #D8D6CE", width: "100%", background: value ? "#FFF7E8" : "#fff", color: "#54524A" }}
+    >
+      <option value="">{allLabel}</option>
+      {options.map((o) => (
+        <option key={o} value={o}>
+          {o}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function FilterText({ value, onChange }) {
+  return (
+    <input
+      value={value || ""}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder="filtrar..."
+      style={{ fontSize: 11.5, padding: "3px 5px", borderRadius: 5, border: "1px solid #D8D6CE", width: "100%", boxSizing: "border-box", background: value ? "#FFF7E8" : "#fff" }}
+    />
+  );
+}
+
+function DataTable({ rows, visibleCols, optionLists, sugestoes, columnFilters, onSetColumnFilter, onUpdateRow, onOpenDrawer, onAddOption, onAddSugestao }) {
   return (
     <div style={{ overflow: "auto", height: "100%" }}>
       <table style={{ borderCollapse: "collapse", fontSize: 12.5, width: "max-content", minWidth: "100%" }}>
@@ -756,6 +889,59 @@ function DataTable({ rows, visibleCols, optionLists, sugestoes, onUpdateRow, onO
             {visibleCols.map((c) => (
               <th key={c} style={th}>
                 {c}
+              </th>
+            ))}
+          </tr>
+          <tr>
+            <th style={{ ...thFilter, position: "sticky", left: 0, zIndex: 3, background: "#FBFBFA" }}></th>
+            <th style={thFilter}>
+              <FilterSelect value={columnFilters.analista1} onChange={(v) => onSetColumnFilter("analista1", v)} options={[...optionLists.analistas, "(vazio)"]} />
+            </th>
+            <th style={thFilter}>
+              <FilterSelect value={columnFilters.analista2} onChange={(v) => onSetColumnFilter("analista2", v)} options={[...optionLists.analistas, "(vazio)"]} />
+            </th>
+            <th style={thFilter}>
+              <FilterSelect value={columnFilters.statusInicial} onChange={(v) => onSetColumnFilter("statusInicial", v)} options={[...optionLists.status, "(vazio)"]} />
+            </th>
+            <th style={thFilter}>
+              <FilterSelect value={columnFilters.liminar} onChange={(v) => onSetColumnFilter("liminar", v)} options={optionLists.liminar} />
+            </th>
+            <th style={thFilter}>
+              <select
+                value={columnFilters.motoristaCiente || ""}
+                onChange={(e) => onSetColumnFilter("motoristaCiente", e.target.value)}
+                style={{ fontSize: 11.5, padding: "3px 4px", borderRadius: 5, border: "1px solid #D8D6CE", width: "100%", background: columnFilters.motoristaCiente ? "#FFF7E8" : "#fff", color: "#54524A" }}
+              >
+                <option value="">Todos</option>
+                <option value="sim">Sim</option>
+                <option value="nao">Não</option>
+              </select>
+            </th>
+            <th style={thFilter}>
+              <select
+                value={columnFilters.enviado || ""}
+                onChange={(e) => onSetColumnFilter("enviado", e.target.value)}
+                style={{ fontSize: 11.5, padding: "3px 4px", borderRadius: 5, border: "1px solid #D8D6CE", width: "100%", background: columnFilters.enviado ? "#FFF7E8" : "#fff", color: "#54524A" }}
+              >
+                <option value="">Todos</option>
+                <option value="sim">Sim</option>
+                <option value="nao">Não</option>
+              </select>
+            </th>
+            {CITIES.map((c) => (
+              <th key={c.key} style={thFilter}>
+                <FilterSelect value={columnFilters[CITY_FIELD_MAP[c.key]]} onChange={(v) => onSetColumnFilter(CITY_FIELD_MAP[c.key], v)} options={["preenchido", "vazio"]} />
+              </th>
+            ))}
+            <th style={thFilter}>
+              <FilterText value={columnFilters.jiraBx} onChange={(v) => onSetColumnFilter("jiraBx", v)} />
+            </th>
+            <th style={thFilter}>
+              <FilterText value={columnFilters.novoGrupo} onChange={(v) => onSetColumnFilter("novoGrupo", v)} />
+            </th>
+            {visibleCols.map((c) => (
+              <th key={c} style={thFilter}>
+                <FilterText value={columnFilters[c]} onChange={(v) => onSetColumnFilter(c, v)} />
               </th>
             ))}
           </tr>
@@ -899,7 +1085,7 @@ function EditableSelect({ value, options, onChange, onAddOption, placeholder, co
 // Settings modal (option lists + liminar reference lists + sugestões)
 // ============================================================================
 
-function SettingsModal({ optionLists, liminarRefLists, sugestoes, onAddOption, onRemoveOption, onAddRef, onRemoveRef, onAddSugestao, onRemoveSugestao, onClose }) {
+function SettingsModal({ optionLists, liminarRefLists, sugestoes, onAddOption, onRemoveOption, onAddRef, onRemoveRef, onBulkSetRef, onAddSugestao, onRemoveSugestao, onClose }) {
   const [tab, setTab] = useState("analistas");
 
   const tabsDef = [
@@ -944,18 +1130,21 @@ function SettingsModal({ optionLists, liminarRefLists, sugestoes, onAddOption, o
           {tab === "ref-propria" && (
             <>
               <p style={{ fontSize: 12, color: "#8A8A82", marginTop: 0 }}>Empresas com liminar própria (ARTESP) — usado para sugerir automaticamente o campo Liminar ao importar.</p>
+              <RefListUploader onImport={(values, mode) => onBulkSetRef("propria", values, mode)} label="empresas" />
               <ListEditor items={liminarRefLists.propria} onAdd={(v) => onAddRef("propria", v)} onRemove={(v) => onRemoveRef("propria", v)} placeholder="Nome da empresa" />
             </>
           )}
           {tab === "ref-abrafrec" && (
             <>
               <p style={{ fontSize: 12, color: "#8A8A82", marginTop: 0 }}>Empresas associadas à liminar ABRAFREC.</p>
+              <RefListUploader onImport={(values, mode) => onBulkSetRef("abrafrec", values, mode)} label="empresas" />
               <ListEditor items={liminarRefLists.abrafrec} onAdd={(v) => onAddRef("abrafrec", v)} onRemove={(v) => onRemoveRef("abrafrec", v)} placeholder="Nome da empresa" />
             </>
           )}
           {tab === "ref-atipesp" && (
             <>
               <p style={{ fontSize: 12, color: "#8A8A82", marginTop: 0 }}>Placas cobertas pela liminar ATIPESP.</p>
+              <RefListUploader onImport={(values, mode) => onBulkSetRef("atipesp", values, mode)} label="placas" />
               <ListEditor items={liminarRefLists.atipesp} onAdd={(v) => onAddRef("atipesp", v)} onRemove={(v) => onRemoveRef("atipesp", v)} placeholder="Placa (ex: ABC1D23)" />
             </>
           )}
@@ -965,6 +1154,61 @@ function SettingsModal({ optionLists, liminarRefLists, sugestoes, onAddOption, o
           {tab === "sug-americana" && <ListEditor items={sugestoes.americana || []} onAdd={(v) => onAddSugestao("americana", v)} onRemove={(v) => onRemoveSugestao("americana", v)} placeholder="Novo ponto sugerido em Americana" />}
         </div>
       </div>
+    </div>
+  );
+}
+
+function RefListUploader({ onImport, label }) {
+  const [mode, setMode] = useState("merge"); // 'merge' | 'replace'
+  const [busy, setBusy] = useState(false);
+  const [lastCount, setLastCount] = useState(null);
+  const [error, setError] = useState("");
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBusy(true);
+    setError("");
+    setLastCount(null);
+    try {
+      const values = await parseSimpleList(file);
+      if (!values.length) {
+        setError("Não encontrei nenhum valor nesse arquivo.");
+      } else {
+        onImport(values, mode);
+        setLastCount(values.length);
+      }
+    } catch (err) {
+      console.error(err);
+      setError("Não consegui ler esse arquivo. Confirme se é um .csv ou .xlsx válido.");
+    } finally {
+      setBusy(false);
+      e.target.value = "";
+    }
+  }
+
+  return (
+    <div style={{ background: "#F7F6F2", border: "1px dashed #D8D6CE", borderRadius: 8, padding: 10, marginBottom: 12 }}>
+      <div style={{ fontSize: 11.5, color: "#54524A", marginBottom: 6 }}>
+        Importar planilha de {label} (uma coluna com os valores, com ou sem cabeçalho)
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}>
+          <input type="radio" name={`mode-${label}`} checked={mode === "merge"} onChange={() => setMode("merge")} /> Adicionar à lista atual
+        </label>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}>
+          <input type="radio" name={`mode-${label}`} checked={mode === "replace"} onChange={() => setMode("replace")} /> Substituir lista inteira
+        </label>
+      </div>
+      <label
+        style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, padding: "6px 11px", borderRadius: 7, background: "#233044", color: "#fff", cursor: "pointer", marginTop: 8 }}
+      >
+        {busy ? <Loader2 size={12} className="spin" /> : <Upload size={12} />}
+        {busy ? "Lendo..." : "Escolher arquivo (.csv/.xlsx)"}
+        <input type="file" accept=".csv,.xlsx,.xls" onChange={handleFile} style={{ display: "none" }} disabled={busy} />
+      </label>
+      {lastCount !== null && <div style={{ fontSize: 11.5, color: "#3FA789", marginTop: 6 }}>{lastCount} valores importados.</div>}
+      {error && <div style={{ fontSize: 11.5, color: "#C0503F", marginTop: 6 }}>{error}</div>}
     </div>
   );
 }
