@@ -207,6 +207,29 @@ function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
 
+// Parses the "1) Local A (0.9 km)\n2) Local B (2.2 km)" text the query already
+// computes per group/city into a clean array of option strings.
+function parseOpcoesNovoLocal(raw) {
+  if (!raw) return [];
+  return String(raw)
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^\s*\d+\)\s*/, "").trim())
+    .filter(Boolean);
+}
+
+// Row-specific suggestions first, then any global suggestions not already included.
+function mergeOptions(rowOptions, globalOptions) {
+  const seen = new Set();
+  const out = [];
+  for (const x of [...(rowOptions || []), ...(globalOptions || [])]) {
+    if (x && !seen.has(x)) {
+      seen.add(x);
+      out.push(x);
+    }
+  }
+  return out;
+}
+
 const LIST_HEADER_WORDS = ["empresa", "placa", "liminar", "abrafrec", "atipesp", "própria", "propria", "company", "nome"];
 
 // Reads a CSV/XLSX upload and flattens every non-empty cell into a deduped
@@ -379,9 +402,14 @@ function App() {
       const rows = parsedRows.map((raw) => {
         const empresa = getField(raw, FIELD_CANDIDATES.empresa);
         const placa = getField(raw, FIELD_CANDIDATES.placa);
+        const novoLocalOptions = {};
+        CITIES.forEach((c) => {
+          novoLocalOptions[c.key] = parseOpcoesNovoLocal(getField(raw, [`${c.key}_opcoes_novo_local`]));
+        });
         return {
           _id: uid(),
           _raw: raw,
+          novoLocalOptions,
           analista1: "",
           analista2: "",
           statusInicial: "",
@@ -978,7 +1006,7 @@ function DataTable({ rows, visibleCols, optionLists, sugestoes, columnFilters, o
                   <td key={c.key} style={td}>
                     <EditableSelect
                       value={r[field]}
-                      options={sugestoes[c.key] || []}
+                      options={mergeOptions(r.novoLocalOptions?.[c.key], sugestoes[c.key])}
                       onChange={(v) => onUpdateRow(r._id, { [field]: v })}
                       onAddOption={(v) => onAddSugestao(c.key, v)}
                       placeholder="—"
@@ -1319,7 +1347,7 @@ function RowDrawer({ row, sugestoes, onUpdate, onAddSugestao, onClose, shortLink
               return (
                 <div key={c.key}>
                   <label style={{ fontSize: 10.5, color: "#8A8A82", display: "block", marginBottom: 3 }}>Novo local · {c.label}</label>
-                  <EditableSelect value={row[field]} options={sugestoes[c.key] || []} onChange={(v) => onUpdate({ [field]: v })} onAddOption={(v) => onAddSugestao(c.key, v)} placeholder="—" allowFreeText />
+                  <EditableSelect value={row[field]} options={mergeOptions(row.novoLocalOptions?.[c.key], sugestoes[c.key])} onChange={(v) => onUpdate({ [field]: v })} onAddOption={(v) => onAddSugestao(c.key, v)} placeholder="—" allowFreeText />
                 </div>
               );
             })}
