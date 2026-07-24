@@ -1006,7 +1006,7 @@ function DataTable({ rows, visibleCols, optionLists, sugestoes, columnFilters, o
                   <td key={c.key} style={td}>
                     <EditableSelect
                       value={r[field]}
-                      options={mergeOptions(r.novoLocalOptions?.[c.key], sugestoes[c.key])}
+                      options={r.novoLocalOptions?.[c.key] || []}
                       onChange={(v) => onUpdateRow(r._id, { [field]: v })}
                       onAddOption={(v) => onAddSugestao(c.key, v)}
                       placeholder="—"
@@ -1347,7 +1347,7 @@ function RowDrawer({ row, sugestoes, onUpdate, onAddSugestao, onClose, shortLink
               return (
                 <div key={c.key}>
                   <label style={{ fontSize: 10.5, color: "#8A8A82", display: "block", marginBottom: 3 }}>Novo local · {c.label}</label>
-                  <EditableSelect value={row[field]} options={mergeOptions(row.novoLocalOptions?.[c.key], sugestoes[c.key])} onChange={(v) => onUpdate({ [field]: v })} onAddOption={(v) => onAddSugestao(c.key, v)} placeholder="—" allowFreeText />
+                  <EditableSelect value={row[field]} options={row.novoLocalOptions?.[c.key] || []} onChange={(v) => onUpdate({ [field]: v })} onAddOption={(v) => onAddSugestao(c.key, v)} placeholder="—" allowFreeText />
                 </div>
               );
             })}
