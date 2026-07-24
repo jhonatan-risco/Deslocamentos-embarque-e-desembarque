@@ -578,19 +578,19 @@ function App() {
   return (
     <div style={{ minHeight: "100%", background: "#F4F4F2", fontFamily: "'Inter', system-ui, sans-serif", display: "flex", flexDirection: "column" }}>
       {/* Header */}
-      <div style={{ background: "#161F2B", color: "#F4F4F2", padding: "16px 22px" }}>
+      <div style={{ background: "#2B0A1E", color: "#F4F4F2", padding: "16px 22px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <Bus size={19} color="#E3B23C" />
-            <span style={{ fontSize: 12.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "#9AA6B2" }}>
+            <Bus size={19} color="#F21075" />
+            <span style={{ fontSize: 12.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "#C79AB0" }}>
               Controle de deslocamentos
             </span>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11.5, color: "#9AA6B2" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11.5, color: "#C79AB0" }}>
             <Users size={13} />
             <span>{isBackendConfigured() ? "Compartilhado entre todos os analistas" : "Modo local (backend não configurado ainda)"}</span>
             {isBackendConfigured() && (
-              <button onClick={fetchRemote} title="Atualizar agora" style={{ border: "none", background: "none", cursor: "pointer", color: "#9AA6B2", display: "flex" }}>
+              <button onClick={fetchRemote} title="Atualizar agora" style={{ border: "none", background: "none", cursor: "pointer", color: "#C79AB0", display: "flex" }}>
                 <RefreshCw size={13} className={syncing ? "spin" : ""} />
               </button>
             )}
@@ -609,7 +609,7 @@ function App() {
         )}
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <label
-            style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#E3B23C", color: "#161F2B", border: "none", borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#F21075", color: "#FFFFFF", border: "none", borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
           >
             {importing ? <Loader2 size={15} className="spin" /> : <Upload size={15} />}
             {importing ? "Importando..." : "Importar planilha (nova aba)"}
@@ -620,7 +620,7 @@ function App() {
             <button
               onClick={handleExportBatch}
               disabled={exporting}
-              style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#233044", border: "1px solid #35455C", borderRadius: 8, padding: "8px 14px", cursor: exporting ? "default" : "pointer", fontSize: 13, color: "#fff" }}
+              style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#7A1F4B", border: "1px solid #6B2B49", borderRadius: 8, padding: "8px 14px", cursor: exporting ? "default" : "pointer", fontSize: 13, color: "#fff" }}
             >
               {exporting ? <Loader2 size={15} className="spin" /> : <Download size={15} />}
               {exporting ? `Gerando links ${exportProgress.done}/${exportProgress.total}` : "Baixar planilha"}
@@ -632,7 +632,7 @@ function App() {
               editingRef.current = true;
               setSettingsOpen(true);
             }}
-            style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "none", border: "1px solid #35455C", borderRadius: 8, padding: "8px 12px", cursor: "pointer", fontSize: 13, color: "#C7CDD4" }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "none", border: "1px solid #6B2B49", borderRadius: 8, padding: "8px 12px", cursor: "pointer", fontSize: 13, color: "#E8CBDA" }}
           >
             <Settings size={15} /> Listas, liminares e sugestões
           </button>
@@ -1116,7 +1116,7 @@ function SettingsModal({ optionLists, liminarRefLists, sugestoes, onAddOption, o
             <button
               key={key}
               onClick={() => setTab(key)}
-              style={{ fontSize: 11.5, fontWeight: 600, padding: "7px 10px", border: "none", background: "none", borderBottom: tab === key ? "2px solid #233044" : "2px solid transparent", color: tab === key ? "#22221F" : "#8A8A82", cursor: "pointer" }}
+              style={{ fontSize: 11.5, fontWeight: 600, padding: "7px 10px", border: "none", background: "none", borderBottom: tab === key ? "2px solid #7A1F4B" : "2px solid transparent", color: tab === key ? "#22221F" : "#8A8A82", cursor: "pointer" }}
             >
               {label}
             </button>
@@ -1201,7 +1201,7 @@ function RefListUploader({ onImport, label }) {
         </label>
       </div>
       <label
-        style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, padding: "6px 11px", borderRadius: 7, background: "#233044", color: "#fff", cursor: "pointer", marginTop: 8 }}
+        style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, padding: "6px 11px", borderRadius: 7, background: "#7A1F4B", color: "#fff", cursor: "pointer", marginTop: 8 }}
       >
         {busy ? <Loader2 size={12} className="spin" /> : <Upload size={12} />}
         {busy ? "Lendo..." : "Escolher arquivo (.csv/.xlsx)"}
@@ -1235,7 +1235,7 @@ function ListEditor({ items, onAdd, onRemove, placeholder }) {
             onAdd(val);
             setVal("");
           }}
-          style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, fontWeight: 600, padding: "7px 12px", borderRadius: 7, border: "none", background: "#233044", color: "#fff", cursor: "pointer" }}
+          style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, fontWeight: 600, padding: "7px 12px", borderRadius: 7, border: "none", background: "#7A1F4B", color: "#fff", cursor: "pointer" }}
         >
           <Plus size={13} /> Adicionar
         </button>
@@ -1350,7 +1350,7 @@ function RowDrawer({ row, sugestoes, onUpdate, onAddSugestao, onClose, shortLink
                 if (!waLink(row.contato, message)) e.preventDefault();
                 else onUpdate({ enviado: true });
               }}
-              style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 8, background: waLink(row.contato, message) ? "#233044" : "#D8D6CE", color: "#fff", textDecoration: "none", cursor: waLink(row.contato, message) ? "pointer" : "not-allowed" }}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 8, background: waLink(row.contato, message) ? "#7A1F4B" : "#D8D6CE", color: "#fff", textDecoration: "none", cursor: waLink(row.contato, message) ? "pointer" : "not-allowed" }}
             >
               <Send size={13} /> Abrir WhatsApp
             </a>
