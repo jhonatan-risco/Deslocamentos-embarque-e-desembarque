@@ -1048,10 +1048,10 @@ function DataTable({ rows, visibleCols, optionLists, sugestoes, columnFilters, o
                 const str = String(raw ?? "");
                 const isLink = /^https?:\/\//i.test(str);
                 return (
-                  <td key={c} style={{ ...td, color: "#54524A", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>
+                  <td key={c} style={{ ...td, color: "#54524A", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }}>
                     {isLink ? (
                       <a href={str} target="_blank" rel="noreferrer" style={{ color: "#7A1F4B" }}>
-                        {/link_grupo|link do grupo/i.test(c) ? "Ver grupo ↗" : "Abrir ↗"}
+                        {str}
                       </a>
                     ) : (
                       str
