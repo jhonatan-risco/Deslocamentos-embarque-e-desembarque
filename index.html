@@ -1,0 +1,1157 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Controle de Deslocamentos</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  html, body, #root { height: 100%; margin: 0; }
+  * { box-sizing: border-box; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react" data-type="module">
+const { useState, useEffect, useRef, useCallback, useMemo } = React;
+
+// ---- Ícones simples (substituem lucide-react, que precisa de bundler) ----
+function Icon({ children, size = 14, className = "" }) {
+  return (
+    <span className={className} style={{ fontSize: size, lineHeight: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", width: size, height: size }}>
+      {children}
+    </span>
+  );
+}
+const Upload = (p) => <Icon {...p}>📤</Icon>;
+const Plus = (p) => <Icon {...p}>➕</Icon>;
+const X = (p) => <Icon {...p}>✕</Icon>;
+const Settings = (p) => <Icon {...p}>⚙️</Icon>;
+const Search = (p) => <Icon {...p}>🔍</Icon>;
+const MessageSquare = (p) => <Icon {...p}>💬</Icon>;
+const Send = (p) => <Icon {...p}>➤</Icon>;
+const Link2 = (p) => <Icon {...p}>🔗</Icon>;
+const Copy = (p) => <Icon {...p}>📋</Icon>;
+const Download = (p) => <Icon {...p}>⬇️</Icon>;
+const Loader2 = (p) => <Icon {...p}>⏳</Icon>;
+const Trash2 = (p) => <Icon {...p}>🗑️</Icon>;
+const Bus = (p) => <Icon {...p}>🚌</Icon>;
+const Columns3 = (p) => <Icon {...p}>▤</Icon>;
+const RefreshCw = (p) => <Icon {...p}>🔄</Icon>;
+const Users = (p) => <Icon {...p}>👥</Icon>;
+const Check = (p) => <Icon {...p}>✓</Icon>;
+
+// ============================================================================
+// Defaults (seeded from the real control workbook you shared)
+// ============================================================================
+
+const CITIES = [
+  { key: "sp", label: "São Paulo" },
+  { key: "campinas", label: "Campinas" },
+  { key: "sjc", label: "São José dos Campos" },
+  { key: "americana", label: "Americana" },
+];
+
+const DEFAULT_STATUS_OPTIONS = ["Alterar PDE", "Deixar Seguir", "Concluído", "Pendente"];
+const DEFAULT_LIMINAR_OPTIONS = ["Sem liminar", "Liminar própria", "Liminar ATIPESP", "Liminar ABRAFREC"];
+const DEFAULT_ANALISTAS = [];
+
+const DEFAULT_SUGESTOES = {
+  sp: ["Shopping Feira da Madrugada", "Chucri Zaidan 1", "Chucri Zaidan 2", "Terminal de Ônibus - Metrô Brás", "Recuo da Abril (Eldorado/Hebraica)", "Oscar Freire - menos p/ DD e LD (Eldorado/Hebraica)"],
+  campinas: ["Posto Jardim do Trevo", "Ponto de ônibus - Campinas Shopping", "UNIP Campinas", "Cidade Satélite Íris", "Av. Dr. Alberto Sarmento, 21"],
+  sjc: [],
+  americana: [],
+};
+
+const LIMINAR_PROPRIA_DEFAULT = ["FGS Turismo", "Primar Turismo", "Clebinho Tur", "Viação Clebinho", "Belos Montes Viagens"];
+
+const LIMINAR_ATIPESP_DEFAULT = ["BAY5C33", "BCF4I03", "BCF4H75", "EJX7E36", "EJX7E41", "EJX7E49", "EJX7E67", "JIG9E67", "MKE3A97", "NZK1G26", "NZR6J37", "RUW9G74", "RVA8C82", "RHP4I52", "SDQ2B27", "EJW9I76", "EQU5F65", "FEB9C78", "FVW2B25", "LSN8H37", "OZH2G83", "ECM9A43", "DJF5J59", "GIK8C81", "GIT8H23", "LLX3I92", "FQU4A13", "GHN2147", "QTU6D38", "SVX1G00", "TLP0G14", "BWL3J00", "BYP3C00", "CPG0J89", "CSK2J37", "EJW1J94", "GEG8F25", "GFA5A13", "PRR6J53", "SQZ1D08", "SRP1I75", "UDT0F33", "EGJ4E03", "EVU3G92", "EVU3G93", "EVU3G94", "EXM5A50", "FFA5D73", "FFA5D77", "FFW2E98", "GIR0C63", "BCY9J01", "BDX9G98", "BDX9H09", "EXU1D90", "KPY8E26", "POO1F86", "PRF1H01", "PRR1H03", "QXP5D43", "OCN2H17", "EVA4G69", "FUB8G55", "STY1C08", "STU0E61", "ECL8088", "ETC1E21", "GHF2305", "GJK7177", "BAD8J75", "EJX0A53", "FJP8D94", "GDG4F22", "STL9J38", "STR2H04", "NYX0D63", "BUS8241", "FLV4I91", "STA3G54", "UET8A48", "UFC1H90", "UGG1E92", "UFF2J18", "BCF5F08", "BTO4C15", "EJW9B10", "ETU3C84", "FVG6G93", "GHN2B47", "ECL8A88", "GHF2D05", "GJK7B77", "BUS8C41", "BCF4803", "JIG9467", "PRR6953", "EXU1390", "EJX0053", "STA3654", "QSW8E20", "TKF0D84", "TKL4E86", "UES3B96", "UFN2A30", "UFS0A78"];
+
+const LIMINAR_ABRAFREC_DEFAULT = ["Primar Turismo", "Lucretur", "Levare", "Ello Transporte", "Transirmãos", "Transbraz", "Solução Turismo", "Vila Adyana", "Dib Tur", "FGS Turismo", "Natal Turismo", "Pindatur", "Santa Maria Turismo", "Sussantur Turismo", "Style Bus", "Transvale Turismo", "Expresso Diamante", "Turismo ABC", "Aliança Tur BH", "Altibus Turismo", "Asas Indomaveis", "Brasil Bus", "Cassintur", "Cerradão Turismo", "Cometinha", "Contagem Turismo", "Expressa Turismo", "Galaxia Turismo", "Honofre Turismo", "Novos Rumos Turismo", "Prisma Turismo", "RE Tur", "RV Turismo", "SF Turismo", "Sidtur", "BH Viagens", "Vale do Sul Turismo", "Vivitur", "Lisboa Turismo", "Allegratur", "AM Turismo", "Doannytur", "Leste Tur Transportes", "EB Silvério Transportes", "Ebisa Turismo", "Estrela Dalva Tour", "Eva Tur Transportes", "Gênesis Bus", "Exclusive Tur Viagens e Tur", "Paloma Turismo", "Pevidor Transporte", "Princesa Turismo", "Rota Brasil Transporte", "TransBuss", "TransMol Transporte", "Viação Cuiabana", "Paratur Turismo", "Adventure Viagens e Turis", "Albuquerque Turismo", "Boy Turismo", "Cooperfretur", "Fontes Viagens & Turismo", "Rota do Sol Turismo e Loca", "Trans Stylus Viagens e Turi", "AAVA Viagens e Turismo", "Juca Tour", "Terra Dourada", "Tj Turismo", "GRC Viagens e Turismo", "Lídia Turismo", "Life Transportes", "Helly Tur", "Adenilde Turismo", "ZANELATUR TURISMO", "Gimenes Turismo", "Grecco", "Lopes Turismo", "Grandino", "Bristar", "Viação Master Sul", "AAVA Turismo", "Mactur Fretamentos", "BRT TRANSPORTES E TURISMO", "Abelazeri Turismo", "ADS Turismo", "Oliviatur", "Andre Turismo", "Condor Tur", "MC Viagens", "ES Turismo", "Gold Turismo", "Fiel Logística e Turismo", "Siris Transpores", "Penedo Turismo", "Nova Balneário Turismo", "São João Turismo", "Ouro de Minas", "Prisma Viagens", "Caiobus Transporte", "Nacional Turismo", "Expresso JK Turismo", "MP Viagens e Turismo", "LLF Turismo", "Fornasa Transportes", "Expresso Arapiraca", "Expresso Cearense", "ADESUL TURISMO", "COOPERBUS NORDESTE", "SCOOBY DOO TURISMO", "OLIVIA TURISMO", "JR Turismo", "Rio Transporte", "Belos Montes Viagens", "Pioneira Transportes", "Ecopolo Brasil", "Marlu Turismo", "MF Turismo", "Prisma Turismo MG", "Bella Vita Transportes", "Belaniz (Monte Serrat)", "SAIRU TURISMO", "Paraquett Turismo", "Star Prime Tour", "JN Transporte", "RHS VIAGENS LTDA", "AO - Trans X Turismo", "WORLD BUS", "Expresso Nogueira", "VIAGENS BARP", "Star Bus", "Via Transportes", "Cantelletur Turismo", "Transvivo", "FF TRANSPORTES", "AO - Juliano Turismo", "E G Turismo", "LOG RIO", "Diretriz", "Turissul", "Horizonte Turismo", "Bertoldi Transportes", "Nova Aliança Turismo", "AMC TUR (HORIZONTE TUR)", "Busmar", "Plena Turismo", "Diferencial turismo", "Espaço Turismo", "Betel Turismo", "Oliver Turismo", "Sintimtur", "Brasiltur", "Transjoelma Turismo", "JF Turismo", "Fernandes Turismo", "JC Turismo", "Lokatur", "Manto Azul", "Migtur", "Via Pevidor", "Doce Sonho - AAVA"];
+
+const FIELD_CANDIDATES = {
+  empresa: ["empresa", "company"],
+  placa: ["onibus_placa", "bus_placa", "placa"],
+  linkGrupo: ["link_grupo", "grupo_link"],
+  cidade: ["cidade_nome", "cidade_origem"],
+  uf: ["cidade_uf"],
+  pontoAtual: ["ponto_parada_nome", "ponto_parada"],
+  descricao: ["descricao"],
+  itinerario: ["itinerario_uf"],
+  datetimeEmbarque: ["datetime_embarque", "grupo_datetime_viagem"],
+  horario: ["horario_embarque"],
+};
+
+const PREFERRED_DATA_COLUMNS = [
+  "empresa",
+  "onibus_placa",
+  "bus_placa",
+  "link_grupo",
+  "datetime_embarque",
+  "grupo_datetime_viagem",
+  "horario_embarque",
+  "descricao",
+  "ponto_parada_nome",
+  "cidade_nome",
+  "cidade_origem",
+  "cidade_uf",
+  "itinerario_uf",
+  "pax_previstos_embarque",
+  "pax_previstos_desembarque",
+];
+
+// ----------------------------------------------------------------------------
+// Backend externo (Google Apps Script), pois esse site precisa funcionar no
+// plano Free, onde o armazenamento nativo de artifacts (window.storage) não
+// está disponível. Cole aqui a URL do seu Web App depois de publicá-lo
+// (veja instruções que te passei em conversa). Enquanto estiver vazio, o site
+// funciona só localmente nesta sessão, sem salvar nem sincronizar com ninguém.
+// ----------------------------------------------------------------------------
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxGaWTgGyvbyArFJ1ZwkNJv36hmE3vsDpM4TC8IXcWC6RoUcOykHVKcg2FGp9wgG6aVRA/exec";
+const POLL_INTERVAL_MS = 8000;
+
+function isBackendConfigured() {
+  return Boolean(APPS_SCRIPT_URL && APPS_SCRIPT_URL.startsWith("http"));
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function getField(row, candidates) {
+  for (const c of candidates) {
+    const foundKey = Object.keys(row).find((k) => k.toLowerCase() === c.toLowerCase());
+    if (foundKey && row[foundKey] !== undefined && String(row[foundKey]).trim() !== "") return row[foundKey];
+  }
+  return "";
+}
+
+function norm(s) {
+  return String(s || "").trim().toLowerCase();
+}
+
+function suggestLiminar(empresa, placa, refLists) {
+  const e = norm(empresa);
+  const p = norm(placa);
+  if (e && refLists.propria.some((x) => norm(x) === e)) return "Liminar própria";
+  if (e && refLists.abrafrec.some((x) => norm(x) === e)) return "Liminar ABRAFREC";
+  if (p && refLists.atipesp.some((x) => norm(x) === p)) return "Liminar ATIPESP";
+  return "Sem liminar";
+}
+
+function buildMessage(row, novosLocais) {
+  const empresa = getField(row, FIELD_CANDIDATES.empresa);
+  const cidade = getField(row, FIELD_CANDIDATES.cidade);
+  const uf = getField(row, FIELD_CANDIDATES.uf);
+  const pontoAtual = getField(row, FIELD_CANDIDATES.pontoAtual);
+  const linkGrupo = getField(row, FIELD_CANDIDATES.linkGrupo);
+  const itinerario = getField(row, FIELD_CANDIDATES.itinerario);
+
+  const filled = CITIES.filter((c) => novosLocais[c.key] && novosLocais[c.key].trim()).map((c) => `${c.label}: ${novosLocais[c.key].trim()}`);
+  const localsText = filled.length ? filled.join("\n") : "_______________________";
+
+  return [
+    `Olá! Tudo bem? Por ajustes operacionais, será necessário alterar o local de embarque/desembarque da viagem${
+      cidade ? ` para ${cidade}${uf ? "/" + uf : ""}` : ""
+    }${empresa ? `, empresa ${empresa}` : ""}.`,
+    pontoAtual ? `Ponto atual: ${pontoAtual}.` : "",
+    "",
+    "O novo local de embarque será:",
+    localsText,
+    "",
+    "Detalhes da viagem:",
+    [linkGrupo, itinerario].filter(Boolean).join("\n"),
+    "",
+    "Os passageiros já foram avisados sobre a mudança e em caso de dúvidas, orientá-los a chamar no aplicativo da Buser.",
+    "",
+    "Me sinalize quando ver essa mensagem, obrigado!",
+  ].join("\n");
+}
+
+function cleanPhone(raw) {
+  if (!raw) return "";
+  const digits = String(raw).replace(/[^0-9]/g, "");
+  if (digits.length === 10 || digits.length === 11) return "55" + digits;
+  return digits;
+}
+
+function waLink(phone, message) {
+  const p = cleanPhone(phone);
+  if (!p) return null;
+  return `https://wa.me/${p}?text=${encodeURIComponent(message || "")}`;
+}
+
+async function shortenUrl(longUrl) {
+  const providers = ["https://is.gd/create.php", "https://v.gd/create.php"];
+  for (const base of providers) {
+    try {
+      const res = await fetch(`${base}?format=json&url=${encodeURIComponent(longUrl)}`);
+      const data = await res.json();
+      if (data && data.shorturl) return data.shorturl;
+    } catch (e) {
+      /* try next */
+    }
+  }
+  return longUrl;
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function uid() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+function defaultState() {
+  return {
+    batches: [],
+    currentBatchId: null,
+    optionLists: { analistas: DEFAULT_ANALISTAS, status: DEFAULT_STATUS_OPTIONS, liminar: DEFAULT_LIMINAR_OPTIONS },
+    liminarRefLists: { propria: LIMINAR_PROPRIA_DEFAULT, atipesp: LIMINAR_ATIPESP_DEFAULT, abrafrec: LIMINAR_ABRAFREC_DEFAULT },
+    sugestoes: DEFAULT_SUGESTOES,
+    visibleColsByBatch: {},
+    shortLinks: {},
+  };
+}
+
+// ============================================================================
+// Main App
+// ============================================================================
+
+function App() {
+  const [state, setState] = useState(defaultState());
+  const [loaded, setLoaded] = useState(false);
+  const [lastSynced, setLastSynced] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+
+  const [importError, setImportError] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [columnsPickerOpen, setColumnsPickerOpen] = useState(false);
+  const [drawerRow, setDrawerRow] = useState(null); // { batchId, rowId }
+  const [search, setSearch] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState({ done: 0, total: 0 });
+
+  const saveTimer = useRef(null);
+  const editingRef = useRef(false); // true while a drawer/settings/input is actively being typed in, to avoid clobbering with a poll
+
+  const [backendError, setBackendError] = useState("");
+
+  const fetchRemote = useCallback(async () => {
+    if (!isBackendConfigured()) return;
+    try {
+      const res = await fetch(`${APPS_SCRIPT_URL}?t=${Date.now()}`);
+      const parsed = await res.json();
+      if (parsed && Object.keys(parsed).length) {
+        setState((prev) => ({ ...defaultState(), ...parsed }));
+      }
+      setBackendError("");
+      setLastSynced(new Date());
+    } catch (e) {
+      setBackendError("Não consegui buscar os dados compartilhados agora. Tentando de novo em breve.");
+    }
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      await fetchRemote();
+      setLoaded(true);
+    })();
+  }, [fetchRemote]);
+
+  // Poll for updates from other analysts
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!editingRef.current && !drawerRow && !settingsOpen) fetchRemote();
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [fetchRemote, drawerRow, settingsOpen]);
+
+  const persist = useCallback((nextState) => {
+    if (!isBackendConfigured()) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async () => {
+      setSyncing(true);
+      try {
+        // text/plain avoids a CORS preflight that Apps Script web apps don't handle.
+        await fetch(APPS_SCRIPT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify(nextState),
+        });
+        setBackendError("");
+        setLastSynced(new Date());
+      } catch (e) {
+        setBackendError("Não consegui salvar agora — suas últimas alterações podem não ter sido sincronizadas.");
+      } finally {
+        setSyncing(false);
+      }
+    }, 300);
+  }, []);
+
+  function update(patchFn) {
+    setState((prev) => {
+      const next = typeof patchFn === "function" ? patchFn(prev) : { ...prev, ...patchFn };
+      persist(next);
+      return next;
+    });
+  }
+
+  const { batches, currentBatchId, optionLists, liminarRefLists, sugestoes, visibleColsByBatch, shortLinks } = state;
+  const currentBatch = batches.find((b) => b.id === currentBatchId) || null;
+
+  function updateBatchRows(batchId, updater) {
+    update((prev) => ({
+      ...prev,
+      batches: prev.batches.map((b) => (b.id === batchId ? { ...b, rows: updater(b.rows) } : b)),
+    }));
+  }
+
+  function updateRow(batchId, rowId, patch) {
+    updateBatchRows(batchId, (rows) => rows.map((r) => (r._id === rowId ? { ...r, ...patch } : r)));
+  }
+
+  async function handleImport(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportError("");
+    setImporting(true);
+    try {
+      let parsedRows = [];
+      if (/\.xlsx?$/i.test(file.name)) {
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        parsedRows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+      } else {
+        const text = await file.text();
+        const result = Papa.parse(text, { header: true, skipEmptyLines: true });
+        if (result.errors?.length) console.warn("Avisos ao ler CSV:", result.errors);
+        parsedRows = result.data;
+      }
+      if (!parsedRows.length) {
+        setImportError("O arquivo não retornou nenhuma linha.");
+        setImporting(false);
+        return;
+      }
+      const columns = Object.keys(parsedRows[0]);
+      const rows = parsedRows.map((raw) => {
+        const empresa = getField(raw, FIELD_CANDIDATES.empresa);
+        const placa = getField(raw, FIELD_CANDIDATES.placa);
+        return {
+          _id: uid(),
+          _raw: raw,
+          analista1: "",
+          analista2: "",
+          statusInicial: "",
+          liminar: suggestLiminar(empresa, placa, liminarRefLists),
+          liminarManual: false,
+          motoristaCiente: false,
+          enviado: false,
+          novoLocalSp: "",
+          novoLocalCampinas: "",
+          novoLocalSjc: "",
+          novoLocalAmericana: "",
+          jiraBx: "",
+          novoGrupo: "",
+          contato: "",
+        };
+      });
+
+      const preferredVisible = columns.filter((c) => PREFERRED_DATA_COLUMNS.some((p) => p.toLowerCase() === c.toLowerCase()));
+      const visible = preferredVisible.length ? preferredVisible : columns.slice(0, 9);
+
+      const batchId = uid();
+      const newBatch = { id: batchId, name: file.name.replace(/\.(csv|xlsx|xls)$/i, ""), importedAt: new Date().toISOString(), columns, rows };
+
+      update((prev) => ({
+        ...prev,
+        batches: [...prev.batches, newBatch],
+        visibleColsByBatch: { ...prev.visibleColsByBatch, [batchId]: visible },
+        currentBatchId: batchId,
+      }));
+    } catch (err) {
+      console.error(err);
+      setImportError("Não consegui ler esse arquivo. Confirme se é um .csv ou .xlsx válido.");
+    } finally {
+      setImporting(false);
+      e.target.value = "";
+    }
+  }
+
+  function removeBatch(batchId) {
+    update((prev) => {
+      const batches2 = prev.batches.filter((b) => b.id !== batchId);
+      return {
+        ...prev,
+        batches: batches2,
+        currentBatchId: prev.currentBatchId === batchId ? batches2[0]?.id ?? null : prev.currentBatchId,
+      };
+    });
+  }
+
+  function addOption(listKey, value) {
+    if (!value.trim()) return;
+    update((prev) => ({ ...prev, optionLists: { ...prev.optionLists, [listKey]: [...prev.optionLists[listKey], value.trim()] } }));
+  }
+  function removeOption(listKey, value) {
+    update((prev) => ({ ...prev, optionLists: { ...prev.optionLists, [listKey]: prev.optionLists[listKey].filter((x) => x !== value) } }));
+  }
+  function addRefEntry(listKey, value) {
+    if (!value.trim()) return;
+    update((prev) => ({ ...prev, liminarRefLists: { ...prev.liminarRefLists, [listKey]: [...prev.liminarRefLists[listKey], value.trim()] } }));
+  }
+  function removeRefEntry(listKey, value) {
+    update((prev) => ({ ...prev, liminarRefLists: { ...prev.liminarRefLists, [listKey]: prev.liminarRefLists[listKey].filter((x) => x !== value) } }));
+  }
+  function addSugestao(cityKey, value) {
+    if (!value.trim()) return;
+    update((prev) => ({ ...prev, sugestoes: { ...prev.sugestoes, [cityKey]: [...(prev.sugestoes[cityKey] || []), value.trim()] } }));
+  }
+  function removeSugestao(cityKey, value) {
+    update((prev) => ({ ...prev, sugestoes: { ...prev.sugestoes, [cityKey]: (prev.sugestoes[cityKey] || []).filter((x) => x !== value) } }));
+  }
+
+  async function ensureShortLink(rowId, phone, message) {
+    const existing = shortLinks[rowId];
+    if (existing && existing.phone === phone && existing.message === message && existing.shortUrl) return existing.shortUrl;
+    const long = waLink(phone, message);
+    if (!long) return null;
+    const shortUrl = await shortenUrl(long);
+    update((prev) => ({ ...prev, shortLinks: { ...prev.shortLinks, [rowId]: { shortUrl, phone, message } } }));
+    return shortUrl;
+  }
+
+  const filteredRows = useMemo(() => {
+    if (!currentBatch) return [];
+    if (!search.trim()) return currentBatch.rows;
+    const q = norm(search);
+    return currentBatch.rows.filter((r) => {
+      const empresa = norm(getField(r._raw, FIELD_CANDIDATES.empresa));
+      const placa = norm(getField(r._raw, FIELD_CANDIDATES.placa));
+      const link = norm(getField(r._raw, FIELD_CANDIDATES.linkGrupo));
+      return empresa.includes(q) || placa.includes(q) || link.includes(q) || norm(r.analista1).includes(q);
+    });
+  }, [currentBatch, search]);
+
+  async function handleExportBatch() {
+    if (!currentBatch) return;
+    setExporting(true);
+    setExportProgress({ done: 0, total: filteredRows.length });
+    const sheetRows = [];
+    for (let i = 0; i < filteredRows.length; i++) {
+      const r = filteredRows[i];
+      const locals = { sp: r.novoLocalSp, campinas: r.novoLocalCampinas, sjc: r.novoLocalSjc, americana: r.novoLocalAmericana };
+      const message = buildMessage(r._raw, locals);
+      let shortUrl = "";
+      if (waLink(r.contato, message)) {
+        shortUrl = await ensureShortLink(r._id, r.contato, message);
+        await sleep(180);
+      }
+      sheetRows.push({
+        "Analista 1": r.analista1,
+        "Analista 2 (Reforçar)": r.analista2,
+        "Status inicial": r.statusInicial,
+        Liminar: r.liminar,
+        "Motorista/Empresa ciente": r.motoristaCiente ? "TRUE" : "FALSE",
+        Enviado: r.enviado ? "TRUE" : "FALSE",
+        "Novo local - São Paulo": r.novoLocalSp,
+        "Novo local - Campinas": r.novoLocalCampinas,
+        "Novo local - São José dos Campos": r.novoLocalSjc,
+        "Novo local - Americana": r.novoLocalAmericana,
+        "Jira BX": r.jiraBx,
+        "Novo grupo": r.novoGrupo,
+        Contato: r.contato,
+        "Link WhatsApp (reduzido)": shortUrl,
+        ...r._raw,
+      });
+      setExportProgress({ done: i + 1, total: filteredRows.length });
+    }
+    const ws = XLSX.utils.json_to_sheet(sheetRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, currentBatch.name.slice(0, 28) || "Dados");
+    XLSX.writeFile(wb, `${currentBatch.name || "controle_deslocamentos"}.xlsx`);
+    setExporting(false);
+  }
+
+  const visibleCols = currentBatch ? visibleColsByBatch[currentBatch.id] || currentBatch.columns.slice(0, 9) : [];
+
+  return (
+    <div style={{ minHeight: "100%", background: "#F4F4F2", fontFamily: "'Inter', system-ui, sans-serif", display: "flex", flexDirection: "column" }}>
+      {/* Header */}
+      <div style={{ background: "#161F2B", color: "#F4F4F2", padding: "16px 22px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Bus size={19} color="#E3B23C" />
+            <span style={{ fontSize: 12.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "#9AA6B2" }}>
+              Controle de deslocamentos
+            </span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11.5, color: "#9AA6B2" }}>
+            <Users size={13} />
+            <span>{isBackendConfigured() ? "Compartilhado entre todos os analistas" : "Modo local (backend não configurado ainda)"}</span>
+            {isBackendConfigured() && (
+              <button onClick={fetchRemote} title="Atualizar agora" style={{ border: "none", background: "none", cursor: "pointer", color: "#9AA6B2", display: "flex" }}>
+                <RefreshCw size={13} className={syncing ? "spin" : ""} />
+              </button>
+            )}
+            {isBackendConfigured() && lastSynced && <span>· sincronizado {lastSynced.toLocaleTimeString("pt-BR")}</span>}
+          </div>
+        </div>
+        {!isBackendConfigured() && (
+          <div style={{ background: "#3A2E1A", border: "1px solid #5C4A24", color: "#F0D9A8", borderRadius: 8, padding: "8px 12px", fontSize: 12, marginBottom: 10 }}>
+            Backend de sincronização ainda não configurado — nada será salvo nem compartilhado com outros analistas até você colar a URL do Web App do Google Apps Script na constante <code>APPS_SCRIPT_URL</code> no código. Cada pessoa que abrir esse link, por enquanto, vê seus próprios dados temporários só nesta sessão.
+          </div>
+        )}
+        {backendError && (
+          <div style={{ background: "#3A1F1A", border: "1px solid #5C2E24", color: "#F0B0A8", borderRadius: 8, padding: "8px 12px", fontSize: 12, marginBottom: 10 }}>
+            {backendError}
+          </div>
+        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <label
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#E3B23C", color: "#161F2B", border: "none", borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
+          >
+            {importing ? <Loader2 size={15} className="spin" /> : <Upload size={15} />}
+            {importing ? "Importando..." : "Importar planilha (nova aba)"}
+            <input type="file" accept=".csv,.xlsx,.xls" onChange={handleImport} style={{ display: "none" }} disabled={importing} />
+          </label>
+
+          {currentBatch && (
+            <button
+              onClick={handleExportBatch}
+              disabled={exporting}
+              style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#233044", border: "1px solid #35455C", borderRadius: 8, padding: "8px 14px", cursor: exporting ? "default" : "pointer", fontSize: 13, color: "#fff" }}
+            >
+              {exporting ? <Loader2 size={15} className="spin" /> : <Download size={15} />}
+              {exporting ? `Gerando links ${exportProgress.done}/${exportProgress.total}` : "Baixar planilha"}
+            </button>
+          )}
+
+          <button
+            onClick={() => {
+              editingRef.current = true;
+              setSettingsOpen(true);
+            }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "none", border: "1px solid #35455C", borderRadius: 8, padding: "8px 12px", cursor: "pointer", fontSize: 13, color: "#C7CDD4" }}
+          >
+            <Settings size={15} /> Listas, liminares e sugestões
+          </button>
+
+          {importError && <span style={{ fontSize: 12.5, color: "#F0A79A" }}>{importError}</span>}
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "8px 16px", background: "#EFEDE6", borderBottom: "1px solid #E0DED6", overflowX: "auto" }}>
+        {batches.map((b) => (
+          <div
+            key={b.id}
+            onClick={() => update((prev) => ({ ...prev, currentBatchId: b.id }))}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "7px 12px",
+              borderRadius: 8,
+              background: b.id === currentBatchId ? "#fff" : "transparent",
+              boxShadow: b.id === currentBatchId ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+              cursor: "pointer",
+              fontSize: 12.5,
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+            }}
+          >
+            <span style={{ fontWeight: b.id === currentBatchId ? 600 : 500, color: "#22221F" }}>{b.name}</span>
+            <span style={{ color: "#9A988E", fontSize: 11 }}>
+              {new Date(b.importedAt).toLocaleDateString("pt-BR")} · {b.rows.length}
+            </span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (window.confirm(`Remover a aba "${b.name}"? Isso apaga os dados e edições desse lote para todo mundo.`)) removeBatch(b.id);
+              }}
+              style={{ border: "none", background: "none", cursor: "pointer", color: "#B0AEA4", padding: 0, display: "flex" }}
+              title="Remover aba"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        ))}
+        {!batches.length && <span style={{ fontSize: 12.5, color: "#9A988E", padding: "6px 4px" }}>Nenhuma aba ainda — importe uma planilha para começar.</span>}
+      </div>
+
+      {/* Toolbar */}
+      {currentBatch && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", background: "#FBFBFA", borderBottom: "1px solid #E4E2DC", flexWrap: "wrap" }}>
+          <div style={{ position: "relative", flex: "0 1 260px" }}>
+            <Search size={13} style={{ position: "absolute", left: 9, top: 9, color: "#8A8A82" }} />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por empresa, placa, analista..."
+              style={{ width: "100%", padding: "7px 9px 7px 28px", borderRadius: 7, border: "1px solid #D8D6CE", fontSize: 12.5, boxSizing: "border-box" }}
+            />
+          </div>
+          <button
+            onClick={() => setColumnsPickerOpen((v) => !v)}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, border: "1px solid #D8D6CE", background: "#fff", borderRadius: 7, padding: "6px 10px", cursor: "pointer", color: "#54524A", position: "relative" }}
+          >
+            <Columns3 size={13} /> Colunas
+          </button>
+          {columnsPickerOpen && (
+            <ColumnsPicker
+              columns={currentBatch.columns}
+              visible={visibleCols}
+              onChange={(next) => update((prev) => ({ ...prev, visibleColsByBatch: { ...prev.visibleColsByBatch, [currentBatch.id]: next } }))}
+              onClose={() => setColumnsPickerOpen(false)}
+            />
+          )}
+          <span style={{ fontSize: 12, color: "#8A8A82", marginLeft: "auto" }}>
+            {filteredRows.length} de {currentBatch.rows.length} linhas
+          </span>
+        </div>
+      )}
+
+      {/* Body */}
+      <div style={{ flex: 1, overflow: "auto", padding: currentBatch ? 0 : 24 }}>
+        {!currentBatch && <EmptyState />}
+        {currentBatch && (
+          <DataTable
+            rows={filteredRows}
+            visibleCols={visibleCols}
+            optionLists={optionLists}
+            sugestoes={sugestoes}
+            onUpdateRow={(rowId, patch) => updateRow(currentBatch.id, rowId, patch)}
+            onOpenDrawer={(rowId) => {
+              editingRef.current = true;
+              setDrawerRow({ batchId: currentBatch.id, rowId });
+            }}
+            onAddOption={addOption}
+            onAddSugestao={addSugestao}
+          />
+        )}
+      </div>
+
+      {settingsOpen && (
+        <SettingsModal
+          optionLists={optionLists}
+          liminarRefLists={liminarRefLists}
+          sugestoes={sugestoes}
+          onAddOption={addOption}
+          onRemoveOption={removeOption}
+          onAddRef={addRefEntry}
+          onRemoveRef={removeRefEntry}
+          onAddSugestao={addSugestao}
+          onRemoveSugestao={removeSugestao}
+          onClose={() => {
+            editingRef.current = false;
+            setSettingsOpen(false);
+          }}
+        />
+      )}
+
+      {drawerRow && (
+        <RowDrawer
+          row={batches.find((b) => b.id === drawerRow.batchId)?.rows.find((r) => r._id === drawerRow.rowId)}
+          sugestoes={sugestoes}
+          onUpdate={(patch) => updateRow(drawerRow.batchId, drawerRow.rowId, patch)}
+          onAddSugestao={addSugestao}
+          onClose={() => {
+            editingRef.current = false;
+            setDrawerRow(null);
+          }}
+          shortLinks={shortLinks}
+          onGenerateLink={ensureShortLink}
+        />
+      )}
+
+      <style>{`
+        .spin { animation: spin 1s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      `}</style>
+    </div>
+  );
+}
+
+// ============================================================================
+// Empty state
+// ============================================================================
+
+function EmptyState() {
+  return (
+    <div style={{ border: "1px dashed #D8D6CE", borderRadius: 12, padding: "56px 24px", textAlign: "center", color: "#8A8A82", margin: 24 }}>
+      <Bus size={30} style={{ marginBottom: 10, opacity: 0.5 }} />
+      <div style={{ fontSize: 14, marginBottom: 4 }}>Nenhuma aba importada ainda</div>
+      <div style={{ fontSize: 12.5, maxWidth: 420, margin: "0 auto" }}>
+        Exporte a consulta do Metabase em CSV ou Excel e clique em "Importar planilha" acima. Cada arquivo importado vira
+        uma aba nova, visível para todos os analistas.
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Columns picker
+// ============================================================================
+
+function ColumnsPicker({ columns, visible, onChange, onClose }) {
+  function toggle(col) {
+    if (visible.includes(col)) onChange(visible.filter((c) => c !== col));
+    else onChange([...visible, col]);
+  }
+  return (
+    <div style={{ position: "absolute", top: 44, left: 130, background: "#fff", border: "1px solid #E4E2DC", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", padding: 10, zIndex: 30, maxHeight: 320, overflowY: "auto", minWidth: 240 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+        <span style={{ fontSize: 11.5, fontWeight: 600, color: "#54524A" }}>Colunas de dados visíveis</span>
+        <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", color: "#8A8A82" }}>
+          <X size={13} />
+        </button>
+      </div>
+      {columns.map((c) => (
+        <label key={c} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, padding: "3px 2px", cursor: "pointer" }}>
+          <input type="checkbox" checked={visible.includes(c)} onChange={() => toggle(c)} />
+          {c}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================================
+// Data table
+// ============================================================================
+
+const th = { padding: "8px 10px", fontWeight: 600, color: "#54524A", whiteSpace: "nowrap", borderBottom: "1px solid #E4E2DC", textAlign: "left", background: "#F7F6F2", position: "sticky", top: 0 };
+const td = { padding: "6px 10px", borderBottom: "1px solid #EFEDE6", whiteSpace: "nowrap" };
+
+const CITY_FIELD_MAP = { sp: "novoLocalSp", campinas: "novoLocalCampinas", sjc: "novoLocalSjc", americana: "novoLocalAmericana" };
+
+function DataTable({ rows, visibleCols, optionLists, sugestoes, onUpdateRow, onOpenDrawer, onAddOption, onAddSugestao }) {
+  return (
+    <div style={{ overflow: "auto", height: "100%" }}>
+      <table style={{ borderCollapse: "collapse", fontSize: 12.5, width: "max-content", minWidth: "100%" }}>
+        <thead>
+          <tr>
+            <th style={{ ...th, position: "sticky", left: 0, zIndex: 3, background: "#F7F6F2" }}></th>
+            <th style={th}>Analista 1</th>
+            <th style={th}>Analista 2</th>
+            <th style={th}>Status inicial</th>
+            <th style={th}>Liminar</th>
+            <th style={th}>Ciente</th>
+            <th style={th}>Enviado</th>
+            {CITIES.map((c) => (
+              <th key={c.key} style={th}>
+                Novo local · {c.label}
+              </th>
+            ))}
+            <th style={th}>Jira BX</th>
+            <th style={th}>Novo grupo</th>
+            {visibleCols.map((c) => (
+              <th key={c} style={th}>
+                {c}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r._id}>
+              <td style={{ ...td, position: "sticky", left: 0, background: "#fff", zIndex: 1 }}>
+                <button onClick={() => onOpenDrawer(r._id)} title="Mensagem / contato" style={{ border: "none", background: "#EFEDE6", borderRadius: 6, padding: 5, cursor: "pointer", display: "flex", color: "#54524A" }}>
+                  <MessageSquare size={13} />
+                </button>
+              </td>
+              <td style={td}>
+                <EditableSelect value={r.analista1} options={optionLists.analistas} onChange={(v) => onUpdateRow(r._id, { analista1: v })} onAddOption={(v) => onAddOption("analistas", v)} placeholder="—" />
+              </td>
+              <td style={td}>
+                <EditableSelect value={r.analista2} options={optionLists.analistas} onChange={(v) => onUpdateRow(r._id, { analista2: v })} onAddOption={(v) => onAddOption("analistas", v)} placeholder="—" />
+              </td>
+              <td style={td}>
+                <EditableSelect value={r.statusInicial} options={optionLists.status} onChange={(v) => onUpdateRow(r._id, { statusInicial: v })} onAddOption={(v) => onAddOption("status", v)} placeholder="—" />
+              </td>
+              <td style={td}>
+                <EditableSelect value={r.liminar} options={optionLists.liminar} onChange={(v) => onUpdateRow(r._id, { liminar: v, liminarManual: true })} onAddOption={(v) => onAddOption("liminar", v)} colorize />
+              </td>
+              <td style={{ ...td, textAlign: "center" }}>
+                <input type="checkbox" checked={r.motoristaCiente} onChange={(e) => onUpdateRow(r._id, { motoristaCiente: e.target.checked })} />
+              </td>
+              <td style={{ ...td, textAlign: "center" }}>
+                <input type="checkbox" checked={r.enviado} onChange={(e) => onUpdateRow(r._id, { enviado: e.target.checked })} />
+              </td>
+              {CITIES.map((c) => {
+                const field = CITY_FIELD_MAP[c.key];
+                return (
+                  <td key={c.key} style={td}>
+                    <EditableSelect
+                      value={r[field]}
+                      options={sugestoes[c.key] || []}
+                      onChange={(v) => onUpdateRow(r._id, { [field]: v })}
+                      onAddOption={(v) => onAddSugestao(c.key, v)}
+                      placeholder="—"
+                      allowFreeText
+                    />
+                  </td>
+                );
+              })}
+              <td style={td}>
+                <input
+                  value={r.jiraBx}
+                  onChange={(e) => onUpdateRow(r._id, { jiraBx: e.target.value })}
+                  placeholder="—"
+                  style={{ border: "1px solid transparent", background: "transparent", fontSize: 12.5, width: 110, padding: "3px 5px", borderRadius: 5 }}
+                  onFocus={(e) => (e.target.style.border = "1px solid #D8D6CE")}
+                  onBlur={(e) => (e.target.style.border = "1px solid transparent")}
+                />
+              </td>
+              <td style={td}>
+                <input
+                  value={r.novoGrupo}
+                  onChange={(e) => onUpdateRow(r._id, { novoGrupo: e.target.value })}
+                  placeholder="—"
+                  style={{ border: "1px solid transparent", background: "transparent", fontSize: 12.5, width: 130, padding: "3px 5px", borderRadius: 5 }}
+                  onFocus={(e) => (e.target.style.border = "1px solid #D8D6CE")}
+                  onBlur={(e) => (e.target.style.border = "1px solid transparent")}
+                />
+              </td>
+              {visibleCols.map((c) => (
+                <td key={c} style={{ ...td, color: "#54524A", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {String(r._raw[c] ?? "")}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+const LIMINAR_COLORS = {
+  "Sem liminar": { color: "#3FA789", bg: "#EAF7F1" },
+  "Liminar própria": { color: "#C0503F", bg: "#FBEAE7" },
+  "Liminar ATIPESP": { color: "#B8791E", bg: "#FBF1E1" },
+  "Liminar ABRAFREC": { color: "#8A5FB0", bg: "#F1EAF7" },
+};
+
+function EditableSelect({ value, options, onChange, onAddOption, placeholder, colorize, allowFreeText }) {
+  const [adding, setAdding] = useState(false);
+  const [newVal, setNewVal] = useState("");
+  const colors = colorize ? LIMINAR_COLORS[value] : null;
+  // If the current value isn't part of the known options (e.g. free text typed earlier), still show it.
+  const allOptions = value && !options.includes(value) ? [value, ...options] : options;
+
+  if (adding) {
+    return (
+      <div style={{ display: "flex", gap: 4 }}>
+        <input
+          autoFocus
+          value={newVal}
+          onChange={(e) => setNewVal(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              onAddOption(newVal);
+              onChange(newVal);
+              setAdding(false);
+              setNewVal("");
+            } else if (e.key === "Escape") {
+              setAdding(false);
+            }
+          }}
+          placeholder={allowFreeText ? "Novo local..." : "Novo item..."}
+          style={{ fontSize: 12, padding: "3px 5px", borderRadius: 5, border: "1px solid #D8D6CE", width: 130 }}
+        />
+        <button onClick={() => setAdding(false)} style={{ border: "none", background: "none", cursor: "pointer", color: "#8A8A82" }}>
+          <X size={12} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <select
+      value={value || ""}
+      onChange={(e) => {
+        if (e.target.value === "__add__") setAdding(true);
+        else onChange(e.target.value);
+      }}
+      style={{ fontSize: 12.5, padding: "4px 6px", borderRadius: 6, border: "1px solid #D8D6CE", background: colors ? colors.bg : "#fff", color: colors ? colors.color : "#22221F", fontWeight: colors ? 600 : 400, minWidth: 130, maxWidth: 180 }}
+    >
+      <option value="">{placeholder || "Selecionar..."}</option>
+      {allOptions.map((o) => (
+        <option key={o} value={o}>
+          {o}
+        </option>
+      ))}
+      <option value="__add__">+ {allowFreeText ? "Definir novo local..." : "Adicionar novo..."}</option>
+    </select>
+  );
+}
+
+// ============================================================================
+// Settings modal (option lists + liminar reference lists + sugestões)
+// ============================================================================
+
+function SettingsModal({ optionLists, liminarRefLists, sugestoes, onAddOption, onRemoveOption, onAddRef, onRemoveRef, onAddSugestao, onRemoveSugestao, onClose }) {
+  const [tab, setTab] = useState("analistas");
+
+  const tabsDef = [
+    ["analistas", "Analistas"],
+    ["status", "Status inicial"],
+    ["liminar", "Categorias de liminar"],
+    ["ref-propria", "Liminar própria (empresas)"],
+    ["ref-abrafrec", "Liminar ABRAFREC (empresas)"],
+    ["ref-atipesp", "Liminar ATIPESP (placas)"],
+    ["sug-sp", "Sugestões · São Paulo"],
+    ["sug-campinas", "Sugestões · Campinas"],
+    ["sug-sjc", "Sugestões · São José dos Campos"],
+    ["sug-americana", "Sugestões · Americana"],
+  ];
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(22,31,43,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, width: 580, maxHeight: "82vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: "1px solid #EFEDE6" }}>
+          <span style={{ fontSize: 15, fontWeight: 600, color: "#22221F" }}>Listas, liminares e sugestões de ponto</span>
+          <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", color: "#8A8A82" }}>
+            <X size={17} />
+          </button>
+        </div>
+
+        <div style={{ display: "flex", gap: 4, padding: "10px 18px 0", borderBottom: "1px solid #EFEDE6", flexWrap: "wrap" }}>
+          {tabsDef.map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              style={{ fontSize: 11.5, fontWeight: 600, padding: "7px 10px", border: "none", background: "none", borderBottom: tab === key ? "2px solid #233044" : "2px solid transparent", color: tab === key ? "#22221F" : "#8A8A82", cursor: "pointer" }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ padding: 18, overflowY: "auto", flex: 1 }}>
+          {tab === "analistas" && <ListEditor items={optionLists.analistas} onAdd={(v) => onAddOption("analistas", v)} onRemove={(v) => onRemoveOption("analistas", v)} placeholder="Nome do analista" />}
+          {tab === "status" && <ListEditor items={optionLists.status} onAdd={(v) => onAddOption("status", v)} onRemove={(v) => onRemoveOption("status", v)} placeholder="Novo status" />}
+          {tab === "liminar" && <ListEditor items={optionLists.liminar} onAdd={(v) => onAddOption("liminar", v)} onRemove={(v) => onRemoveOption("liminar", v)} placeholder="Nova categoria" />}
+          {tab === "ref-propria" && (
+            <>
+              <p style={{ fontSize: 12, color: "#8A8A82", marginTop: 0 }}>Empresas com liminar própria (ARTESP) — usado para sugerir automaticamente o campo Liminar ao importar.</p>
+              <ListEditor items={liminarRefLists.propria} onAdd={(v) => onAddRef("propria", v)} onRemove={(v) => onRemoveRef("propria", v)} placeholder="Nome da empresa" />
+            </>
+          )}
+          {tab === "ref-abrafrec" && (
+            <>
+              <p style={{ fontSize: 12, color: "#8A8A82", marginTop: 0 }}>Empresas associadas à liminar ABRAFREC.</p>
+              <ListEditor items={liminarRefLists.abrafrec} onAdd={(v) => onAddRef("abrafrec", v)} onRemove={(v) => onRemoveRef("abrafrec", v)} placeholder="Nome da empresa" />
+            </>
+          )}
+          {tab === "ref-atipesp" && (
+            <>
+              <p style={{ fontSize: 12, color: "#8A8A82", marginTop: 0 }}>Placas cobertas pela liminar ATIPESP.</p>
+              <ListEditor items={liminarRefLists.atipesp} onAdd={(v) => onAddRef("atipesp", v)} onRemove={(v) => onRemoveRef("atipesp", v)} placeholder="Placa (ex: ABC1D23)" />
+            </>
+          )}
+          {tab === "sug-sp" && <ListEditor items={sugestoes.sp || []} onAdd={(v) => onAddSugestao("sp", v)} onRemove={(v) => onRemoveSugestao("sp", v)} placeholder="Novo ponto sugerido em São Paulo" />}
+          {tab === "sug-campinas" && <ListEditor items={sugestoes.campinas || []} onAdd={(v) => onAddSugestao("campinas", v)} onRemove={(v) => onRemoveSugestao("campinas", v)} placeholder="Novo ponto sugerido em Campinas" />}
+          {tab === "sug-sjc" && <ListEditor items={sugestoes.sjc || []} onAdd={(v) => onAddSugestao("sjc", v)} onRemove={(v) => onRemoveSugestao("sjc", v)} placeholder="Novo ponto sugerido em São José dos Campos" />}
+          {tab === "sug-americana" && <ListEditor items={sugestoes.americana || []} onAdd={(v) => onAddSugestao("americana", v)} onRemove={(v) => onRemoveSugestao("americana", v)} placeholder="Novo ponto sugerido em Americana" />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ListEditor({ items, onAdd, onRemove, placeholder }) {
+  const [val, setVal] = useState("");
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+        <input
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              onAdd(val);
+              setVal("");
+            }
+          }}
+          placeholder={placeholder}
+          style={{ flex: 1, padding: "7px 9px", borderRadius: 7, border: "1px solid #D8D6CE", fontSize: 12.5 }}
+        />
+        <button
+          onClick={() => {
+            onAdd(val);
+            setVal("");
+          }}
+          style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, fontWeight: 600, padding: "7px 12px", borderRadius: 7, border: "none", background: "#233044", color: "#fff", cursor: "pointer" }}
+        >
+          <Plus size={13} /> Adicionar
+        </button>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, maxHeight: 260, overflowY: "auto" }}>
+        {items.map((it) => (
+          <span key={it} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, background: "#F0EFE9", borderRadius: 999, padding: "4px 8px 4px 10px", color: "#54524A" }}>
+            {it}
+            <button onClick={() => onRemove(it)} style={{ border: "none", background: "none", cursor: "pointer", color: "#8A8A82", display: "flex" }}>
+              <X size={11} />
+            </button>
+          </span>
+        ))}
+        {!items.length && <span style={{ fontSize: 12, color: "#B0AEA4" }}>Nenhum item ainda.</span>}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Row drawer (message / contact editor)
+// ============================================================================
+
+function RowDrawer({ row, sugestoes, onUpdate, onAddSugestao, onClose, shortLinks, onGenerateLink }) {
+  const [message, setMessage] = useState("");
+  const [loadingLink, setLoadingLink] = useState(false);
+
+  const locals = row ? { sp: row.novoLocalSp, campinas: row.novoLocalCampinas, sjc: row.novoLocalSjc, americana: row.novoLocalAmericana } : {};
+
+  useEffect(() => {
+    if (row) setMessage(buildMessage(row._raw, { sp: row.novoLocalSp, campinas: row.novoLocalCampinas, sjc: row.novoLocalSjc, americana: row.novoLocalAmericana }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [row?._id, row?.novoLocalSp, row?.novoLocalCampinas, row?.novoLocalSjc, row?.novoLocalAmericana]);
+
+  if (!row) return null;
+
+  const empresa = getField(row._raw, FIELD_CANDIDATES.empresa);
+  const placa = getField(row._raw, FIELD_CANDIDATES.placa);
+  const cidade = getField(row._raw, FIELD_CANDIDATES.cidade);
+  const pontoAtual = getField(row._raw, FIELD_CANDIDATES.pontoAtual);
+  const link = shortLinks[row._id];
+  const isStale = link && (link.phone !== row.contato || link.message !== message);
+
+  async function copy(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  async function handleGenerate() {
+    setLoadingLink(true);
+    await onGenerateLink(row._id, row.contato, message);
+    setLoadingLink(false);
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", justifyContent: "flex-end" }}>
+      <div style={{ position: "absolute", inset: 0, background: "rgba(22,31,43,0.35)" }} onClick={onClose} />
+      <div style={{ position: "relative", width: 440, maxWidth: "92vw", background: "#fff", height: "100%", overflowY: "auto", boxShadow: "-8px 0 24px rgba(0,0,0,0.15)" }}>
+        <div style={{ padding: "16px 18px", borderBottom: "1px solid #EFEDE6", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "#22221F" }}>{empresa || "Grupo"}</div>
+            <div style={{ fontSize: 11.5, color: "#8A8A82", fontFamily: "ui-monospace, monospace" }}>{placa}</div>
+          </div>
+          <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", color: "#8A8A82" }}>
+            <X size={17} />
+          </button>
+        </div>
+
+        <div style={{ padding: 18 }}>
+          <div style={{ fontSize: 12, color: "#8A8A82", marginBottom: 14 }}>
+            {cidade && <div>Cidade: {cidade}</div>}
+            {pontoAtual && <div>Ponto atual: {pontoAtual}</div>}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+            {CITIES.map((c) => {
+              const field = CITY_FIELD_MAP[c.key];
+              return (
+                <div key={c.key}>
+                  <label style={{ fontSize: 10.5, color: "#8A8A82", display: "block", marginBottom: 3 }}>Novo local · {c.label}</label>
+                  <EditableSelect value={row[field]} options={sugestoes[c.key] || []} onChange={(v) => onUpdate({ [field]: v })} onAddOption={(v) => onAddSugestao(c.key, v)} placeholder="—" allowFreeText />
+                </div>
+              );
+            })}
+          </div>
+
+          <label style={{ fontSize: 11, color: "#8A8A82", display: "block", marginBottom: 3 }}>Contato (WhatsApp)</label>
+          <input
+            value={row.contato}
+            onChange={(e) => onUpdate({ contato: e.target.value })}
+            placeholder="(11) 99999-9999"
+            style={{ width: "100%", padding: "8px 10px", borderRadius: 7, border: "1px solid #D8D6CE", fontSize: 12.5, boxSizing: "border-box", fontFamily: "ui-monospace, monospace", marginBottom: 12 }}
+          />
+
+          <label style={{ fontSize: 11, color: "#8A8A82", display: "block", marginBottom: 3 }}>Mensagem</label>
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            rows={10}
+            style={{ width: "100%", padding: "9px 10px", borderRadius: 8, border: "1px solid #D8D6CE", fontSize: 12.5, boxSizing: "border-box", resize: "vertical", fontFamily: "inherit", marginBottom: 12 }}
+          />
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+            <a
+              href={waLink(row.contato, message) || "#"}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => {
+                if (!waLink(row.contato, message)) e.preventDefault();
+                else onUpdate({ enviado: true });
+              }}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, padding: "8px 14px", borderRadius: 8, background: waLink(row.contato, message) ? "#233044" : "#D8D6CE", color: "#fff", textDecoration: "none", cursor: waLink(row.contato, message) ? "pointer" : "not-allowed" }}
+            >
+              <Send size={13} /> Abrir WhatsApp
+            </a>
+
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#54524A" }}>
+              <input type="checkbox" checked={row.enviado} onChange={(e) => onUpdate({ enviado: e.target.checked })} />
+              Enviado
+            </label>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#54524A" }}>
+              <input type="checkbox" checked={row.motoristaCiente} onChange={(e) => onUpdate({ motoristaCiente: e.target.checked })} />
+              Motorista/empresa ciente
+            </label>
+          </div>
+
+          <div style={{ borderTop: "1px dashed #E4E2DC", paddingTop: 14 }}>
+            <div style={{ fontSize: 11, color: "#8A8A82", marginBottom: 6 }}>Link reduzido (pra planilha)</div>
+            {!waLink(row.contato, message) ? (
+              <span style={{ fontSize: 12, color: "#B0AEA4" }}>Informe um contato para gerar o link</span>
+            ) : loadingLink ? (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#8A8A82" }}>
+                <Loader2 size={13} className="spin" /> gerando...
+              </span>
+            ) : link && !isStale ? (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                <a href={link.shortUrl} target="_blank" rel="noreferrer" style={{ color: "#3B5773", fontSize: 12.5 }}>
+                  {link.shortUrl.replace(/^https?:\/\//, "")}
+                </a>
+                <button onClick={() => copy(link.shortUrl)} style={{ border: "none", background: "none", cursor: "pointer", color: "#8A8A82" }}>
+                  <Copy size={13} />
+                </button>
+              </span>
+            ) : (
+              <button onClick={handleGenerate} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, border: "1px solid #D8D6CE", background: "#fff", borderRadius: 7, padding: "6px 10px", cursor: "pointer", color: "#54524A" }}>
+                <Link2 size={12} /> {isStale ? "Atualizar link" : "Gerar link"}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
