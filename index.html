@@ -1009,21 +1009,15 @@ function DataTable({ rows, visibleCols, optionLists, sugestoes, columnFilters, o
               </td>
               {CITIES.map((c) => {
                 const field = CITY_FIELD_MAP[c.key];
-                if (!hasCityData(r._raw, c.key)) {
-                  return (
-                    <td key={c.key} style={{ ...td, color: "#B0AEA4", fontStyle: "italic" }}>
-                      Não possui embarque
-                    </td>
-                  );
-                }
+                const opts = r.novoLocalOptions?.[c.key] || [];
                 return (
                   <td key={c.key} style={td}>
                     <EditableSelect
                       value={r[field]}
-                      options={r.novoLocalOptions?.[c.key] || []}
+                      options={opts}
                       onChange={(v) => onUpdateRow(r._id, { [field]: v })}
                       onAddOption={(v) => onAddSugestao(c.key, v)}
-                      placeholder="—"
+                      placeholder={opts.length ? "—" : "Não possui opção de embarque"}
                       allowFreeText
                     />
                   </td>
@@ -1369,15 +1363,18 @@ function RowDrawer({ row, sugestoes, onUpdate, onAddSugestao, onClose, shortLink
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
             {CITIES.map((c) => {
               const field = CITY_FIELD_MAP[c.key];
-              const has = hasCityData(row._raw, c.key);
+              const opts = row.novoLocalOptions?.[c.key] || [];
               return (
                 <div key={c.key}>
                   <label style={{ fontSize: 10.5, color: "#8A8A82", display: "block", marginBottom: 3 }}>Novo local · {c.label}</label>
-                  {has ? (
-                    <EditableSelect value={row[field]} options={row.novoLocalOptions?.[c.key] || []} onChange={(v) => onUpdate({ [field]: v })} onAddOption={(v) => onAddSugestao(c.key, v)} placeholder="—" allowFreeText />
-                  ) : (
-                    <div style={{ fontSize: 12, color: "#B0AEA4", fontStyle: "italic", padding: "5px 0" }}>Não possui embarque</div>
-                  )}
+                  <EditableSelect
+                    value={row[field]}
+                    options={opts}
+                    onChange={(v) => onUpdate({ [field]: v })}
+                    onAddOption={(v) => onAddSugestao(c.key, v)}
+                    placeholder={opts.length ? "—" : "Não possui opção de embarque"}
+                    allowFreeText
+                  />
                 </div>
               );
             })}
