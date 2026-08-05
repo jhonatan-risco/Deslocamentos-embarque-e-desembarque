@@ -1418,31 +1418,24 @@ function DataTable({ rows, visibleCols, customCols, optionLists, sugestoes, colu
                 const raw = r._raw[c];
                 const str = String(raw ?? "");
                 const isLink = /^https?:\/\//i.test(str);
-                const isCustom = (customCols || []).includes(c);
                 const w = widthFor(`data:${c}`) || 260;
-                if (isCustom) {
-                  return (
-                    <td key={c} style={{ ...td, width: w, maxWidth: w, overflow: "hidden" }}>
+                return (
+                  <td key={c} style={{ ...td, width: w, maxWidth: w, overflow: "hidden" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                       <input
                         value={str}
                         onChange={(e) => onUpdateRowRaw(r._id, c, e.target.value)}
                         placeholder="—"
-                        style={{ border: "1px solid transparent", background: "transparent", fontSize: 12.5, width: "100%", padding: "3px 5px", borderRadius: 5, boxSizing: "border-box" }}
+                        style={{ border: "1px solid transparent", background: "transparent", fontSize: 12.5, width: "100%", padding: "3px 5px", borderRadius: 5, boxSizing: "border-box", color: isLink ? "#7A1F4B" : "#22221F" }}
                         onFocus={(e) => (e.target.style.border = "1px solid #D8D6CE")}
                         onBlur={(e) => (e.target.style.border = "1px solid transparent")}
                       />
-                    </td>
-                  );
-                }
-                return (
-                  <td key={c} style={{ ...td, color: "#54524A", width: w, maxWidth: w, overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {isLink ? (
-                      <a href={str} target="_blank" rel="noreferrer" style={{ color: "#7A1F4B" }}>
-                        {str}
-                      </a>
-                    ) : (
-                      str
-                    )}
+                      {isLink && (
+                        <a href={str} target="_blank" rel="noreferrer" title="Abrir link" style={{ display: "flex", flexShrink: 0, color: "#7A1F4B" }}>
+                          <Link2 size={12} />
+                        </a>
+                      )}
+                    </div>
                   </td>
                 );
               })}
