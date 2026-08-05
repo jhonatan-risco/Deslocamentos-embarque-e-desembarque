@@ -378,6 +378,8 @@ function App() {
 
   const saveTimer = useRef(null);
   const editingRef = useRef(false); // true while a drawer/settings/input is actively being typed in, to avoid clobbering with a poll
+  const lastChangeId = useRef(0); // incrementa a cada edição local (update())
+  const savedChangeId = useRef(0); // até qual changeId já foi confirmado salvo no backend
 
   const [backendError, setBackendError] = useState("");
 
@@ -386,6 +388,9 @@ function App() {
     try {
       const res = await fetch(`${APPS_SCRIPT_URL}?t=${Date.now()}`);
       const parsed = await res.json();
+      // Se existem edições locais ainda não confirmadas como salvas, ignora esse fetch
+      // (senão ele sobrescreveria a edição recente com a versão antiga do servidor).
+      if (savedChangeId.current < lastChangeId.current) return;
       if (parsed && Object.keys(parsed).length) {
         setState((prev) => ({ ...defaultState(), ...parsed }));
       }
@@ -411,7 +416,7 @@ function App() {
     return () => clearInterval(interval);
   }, [fetchRemote, drawerRow, settingsOpen]);
 
-  const persist = useCallback((nextState) => {
+  const persist = useCallback((nextState, changeId) => {
     if (!isBackendConfigured()) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
@@ -423,6 +428,7 @@ function App() {
           headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify(nextState),
         });
+        savedChangeId.current = Math.max(savedChangeId.current, changeId);
         setBackendError("");
         setLastSynced(new Date());
       } catch (e) {
@@ -434,9 +440,11 @@ function App() {
   }, []);
 
   function update(patchFn) {
+    lastChangeId.current += 1;
+    const myChangeId = lastChangeId.current;
     setState((prev) => {
       const next = typeof patchFn === "function" ? patchFn(prev) : { ...prev, ...patchFn };
-      persist(next);
+      persist(next, myChangeId);
       return next;
     });
   }
