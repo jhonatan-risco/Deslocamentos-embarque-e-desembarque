@@ -83,6 +83,7 @@ const FIELD_CANDIDATES = {
   descricao: ["descricao"],
   itinerario: ["itinerario_uf"],
   datetimeEmbarque: ["datetime_embarque", "grupo_datetime_viagem"],
+  datetimeViagem: ["datetime_inicio_viagem", "datetime_viagem", "datetime_ida", "horario_inicio_viagem"], // início real da viagem, não o horário deste ponto de embarque
   horario: ["horario_embarque"],
 };
 
@@ -157,9 +158,15 @@ function buildMessage(row, novosLocais) {
   const pontoAtual = getField(row, FIELD_CANDIDATES.pontoAtual);
   const linkGrupo = getField(row, FIELD_CANDIDATES.linkGrupo);
   const itinerario = getField(row, FIELD_CANDIDATES.itinerario);
+  const datetimeViagem = getField(row, FIELD_CANDIDATES.datetimeViagem);
 
   const filled = CITIES.filter((c) => novosLocais[c.key] && novosLocais[c.key].trim()).map((c) => `${c.label}: ${novosLocais[c.key].trim()}`);
   const localsText = filled.length ? filled.join("\n") : "_______________________";
+
+  // Extrai o ID numérico do fim do link (ex: .../staff/grupos/11018826 -> 11018826)
+  // e formata como "#11018826".
+  const grupoIdMatch = String(linkGrupo || "").match(/(\d+)\/?$/);
+  const grupoLinkFormatted = linkGrupo ? (grupoIdMatch ? `#${grupoIdMatch[1]}` : linkGrupo) : "";
 
   return [
     `Olá! Tudo bem? Por ajustes operacionais, será necessário alterar o local de embarque/desembarque da viagem${
@@ -171,7 +178,7 @@ function buildMessage(row, novosLocais) {
     localsText,
     "",
     "Detalhes da viagem:",
-    [linkGrupo, itinerario].filter(Boolean).join("\n"),
+    [grupoLinkFormatted, itinerario, datetimeViagem].filter(Boolean).join("\n"),
     "",
     "Os passageiros já foram avisados sobre a mudança e em caso de dúvidas, orientá-los a chamar no aplicativo da Buser.",
     "",
