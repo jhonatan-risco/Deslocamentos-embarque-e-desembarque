@@ -275,7 +275,85 @@ function defaultState() {
     sugestoes: DEFAULT_SUGESTOES,
     visibleColsByBatch: {},
     shortLinks: {},
+    colWidths: {}, // { [colKey]: px } - largura customizada de qualquer coluna (meta ou de dados)
+    customColumnsByBatch: {}, // { [batchId]: [colName, ...] } - colunas criadas manualmente pelo time (editáveis, podem ser excluídas)
   };
+}
+
+// ============================================================================
+// Tab item (aba) - nome editável com duplo clique
+// ============================================================================
+
+function TabItem({ batch, active, onSelect, onRename, onRemove }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(batch.name);
+
+  function commit() {
+    onRename(val);
+    setEditing(false);
+  }
+
+  return (
+    <div
+      onClick={() => !editing && onSelect()}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "7px 12px",
+        borderRadius: 8,
+        background: active ? "#fff" : "transparent",
+        boxShadow: active ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+        cursor: editing ? "default" : "pointer",
+        fontSize: 12.5,
+        whiteSpace: "nowrap",
+        flexShrink: 0,
+      }}
+    >
+      {editing ? (
+        <input
+          autoFocus
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            else if (e.key === "Escape") {
+              setVal(batch.name);
+              setEditing(false);
+            }
+          }}
+          style={{ fontSize: 12.5, fontWeight: 600, padding: "2px 5px", borderRadius: 5, border: "1px solid #7A1F4B", minWidth: 90 }}
+        />
+      ) : (
+        <span
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            setVal(batch.name);
+            setEditing(true);
+          }}
+          title="Duplo clique para renomear"
+          style={{ fontWeight: active ? 600 : 500, color: "#22221F" }}
+        >
+          {batch.name}
+        </span>
+      )}
+      <span style={{ color: "#9A988E", fontSize: 11 }}>
+        {new Date(batch.importedAt).toLocaleDateString("pt-BR")} · {batch.rows.length}
+      </span>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove();
+        }}
+        style={{ border: "none", background: "none", cursor: "pointer", color: "#B0AEA4", padding: 0, display: "flex" }}
+        title="Remover aba"
+      >
+        <X size={12} />
+      </button>
+    </div>
+  );
 }
 
 // ============================================================================
@@ -363,7 +441,7 @@ function App() {
     });
   }
 
-  const { batches, currentBatchId, optionLists, liminarRefLists, sugestoes, visibleColsByBatch, shortLinks } = state;
+  const { batches, currentBatchId, optionLists, liminarRefLists, sugestoes, visibleColsByBatch, shortLinks, colWidths, customColumnsByBatch } = state;
   const currentBatch = batches.find((b) => b.id === currentBatchId) || null;
 
   useEffect(() => {
@@ -464,6 +542,109 @@ function App() {
         currentBatchId: prev.currentBatchId === batchId ? batches2[0]?.id ?? null : prev.currentBatchId,
       };
     });
+  }
+
+  function renameBatch(batchId, name) {
+    const clean = String(name || "").trim();
+    if (!clean) return;
+    update((prev) => ({
+      ...prev,
+      batches: prev.batches.map((b) => (b.id === batchId ? { ...b, name: clean } : b)),
+    }));
+  }
+
+  function addRow(batchId) {
+    update((prev) => ({
+      ...prev,
+      batches: prev.batches.map((b) => {
+        if (b.id !== batchId) return b;
+        const emptyRaw = {};
+        b.columns.forEach((c) => (emptyRaw[c] = ""));
+        const novoLocalOptions = {};
+        CITIES.forEach((c) => (novoLocalOptions[c.key] = []));
+        const newRow = {
+          _id: uid(),
+          _raw: emptyRaw,
+          novoLocalOptions,
+          analista1: "",
+          analista2: "",
+          statusInicial: "",
+          liminar: "Sem liminar",
+          liminarManual: false,
+          motoristaCiente: false,
+          enviado: false,
+          novoLocalSp: "",
+          novoLocalCampinas: "",
+          novoLocalSjc: "",
+          novoLocalAmericana: "",
+          jiraBx: "",
+          novoGrupo: "",
+          contato: "",
+        };
+        return { ...b, rows: [...b.rows, newRow] };
+      }),
+    }));
+  }
+
+  function deleteRow(batchId, rowId) {
+    if (!window.confirm("Excluir essa linha? Essa ação não pode ser desfeita.")) return;
+    updateBatchRows(batchId, (rows) => rows.filter((r) => r._id !== rowId));
+  }
+
+  function addColumn(batchId, name) {
+    const clean = String(name || "").trim();
+    if (!clean) return;
+    update((prev) => ({
+      ...prev,
+      batches: prev.batches.map((b) => {
+        if (b.id !== batchId) return b;
+        if (b.columns.includes(clean)) return b;
+        return {
+          ...b,
+          columns: [...b.columns, clean],
+          rows: b.rows.map((r) => ({ ...r, _raw: { ...r._raw, [clean]: "" } })),
+        };
+      }),
+      visibleColsByBatch: { ...prev.visibleColsByBatch, [batchId]: [...(prev.visibleColsByBatch[batchId] || []), clean] },
+      customColumnsByBatch: { ...prev.customColumnsByBatch, [batchId]: [...(prev.customColumnsByBatch[batchId] || []), clean] },
+    }));
+  }
+
+  function deleteColumn(batchId, name) {
+    if (!window.confirm(`Excluir a coluna "${name}"? Isso apaga o dado dela em todas as linhas.`)) return;
+    update((prev) => ({
+      ...prev,
+      batches: prev.batches.map((b) => {
+        if (b.id !== batchId) return b;
+        return {
+          ...b,
+          columns: b.columns.filter((c) => c !== name),
+          rows: b.rows.map((r) => {
+            const nextRaw = { ...r._raw };
+            delete nextRaw[name];
+            return { ...r, _raw: nextRaw };
+          }),
+        };
+      }),
+      visibleColsByBatch: { ...prev.visibleColsByBatch, [batchId]: (prev.visibleColsByBatch[batchId] || []).filter((c) => c !== name) },
+      customColumnsByBatch: { ...prev.customColumnsByBatch, [batchId]: (prev.customColumnsByBatch[batchId] || []).filter((c) => c !== name) },
+    }));
+  }
+
+  function moveColumn(batchId, name, direction) {
+    update((prev) => {
+      const list = [...(prev.visibleColsByBatch[batchId] || [])];
+      const idx = list.indexOf(name);
+      if (idx === -1) return prev;
+      const swapWith = direction === "left" ? idx - 1 : idx + 1;
+      if (swapWith < 0 || swapWith >= list.length) return prev;
+      [list[idx], list[swapWith]] = [list[swapWith], list[idx]];
+      return { ...prev, visibleColsByBatch: { ...prev.visibleColsByBatch, [batchId]: list } };
+    });
+  }
+
+  function setColWidth(colKey, px) {
+    update((prev) => ({ ...prev, colWidths: { ...prev.colWidths, [colKey]: Math.max(60, Math.round(px)) } }));
   }
 
   function addOption(listKey, value) {
@@ -679,38 +860,16 @@ function App() {
       {/* Tabs */}
       <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "8px 16px", background: "#EFEDE6", borderBottom: "1px solid #E0DED6", overflowX: "auto" }}>
         {batches.map((b) => (
-          <div
+          <TabItem
             key={b.id}
-            onClick={() => update((prev) => ({ ...prev, currentBatchId: b.id }))}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "7px 12px",
-              borderRadius: 8,
-              background: b.id === currentBatchId ? "#fff" : "transparent",
-              boxShadow: b.id === currentBatchId ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
-              cursor: "pointer",
-              fontSize: 12.5,
-              whiteSpace: "nowrap",
-              flexShrink: 0,
+            batch={b}
+            active={b.id === currentBatchId}
+            onSelect={() => update((prev) => ({ ...prev, currentBatchId: b.id }))}
+            onRename={(name) => renameBatch(b.id, name)}
+            onRemove={() => {
+              if (window.confirm(`Remover a aba "${b.name}"? Isso apaga os dados e edições desse lote para todo mundo.`)) removeBatch(b.id);
             }}
-          >
-            <span style={{ fontWeight: b.id === currentBatchId ? 600 : 500, color: "#22221F" }}>{b.name}</span>
-            <span style={{ color: "#9A988E", fontSize: 11 }}>
-              {new Date(b.importedAt).toLocaleDateString("pt-BR")} · {b.rows.length}
-            </span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                if (window.confirm(`Remover a aba "${b.name}"? Isso apaga os dados e edições desse lote para todo mundo.`)) removeBatch(b.id);
-              }}
-              style={{ border: "none", background: "none", cursor: "pointer", color: "#B0AEA4", padding: 0, display: "flex" }}
-              title="Remover aba"
-            >
-              <X size={12} />
-            </button>
-          </div>
+          />
         ))}
         {!batches.length && <span style={{ fontSize: 12.5, color: "#9A988E", padding: "6px 4px" }}>Nenhuma aba ainda — importe uma planilha para começar.</span>}
       </div>
@@ -737,10 +896,20 @@ function App() {
             <ColumnsPicker
               columns={currentBatch.columns}
               visible={visibleCols}
+              customCols={customColumnsByBatch[currentBatch.id] || []}
               onChange={(next) => update((prev) => ({ ...prev, visibleColsByBatch: { ...prev.visibleColsByBatch, [currentBatch.id]: next } }))}
+              onMove={(col, dir) => moveColumn(currentBatch.id, col, dir)}
+              onDeleteCustom={(col) => deleteColumn(currentBatch.id, col)}
               onClose={() => setColumnsPickerOpen(false)}
             />
           )}
+          <button
+            onClick={() => addRow(currentBatch.id)}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, border: "1px solid #D8D6CE", background: "#fff", borderRadius: 7, padding: "6px 10px", cursor: "pointer", color: "#54524A" }}
+          >
+            <Plus size={13} /> Linha
+          </button>
+          <AddColumnButton onAdd={(name) => addColumn(currentBatch.id, name)} />
           {activeFilterCount > 0 && (
             <button
               onClick={clearColumnFilters}
@@ -762,17 +931,24 @@ function App() {
           <DataTable
             rows={filteredRows}
             visibleCols={visibleCols}
+            customCols={customColumnsByBatch[currentBatch.id] || []}
             optionLists={optionLists}
             sugestoes={sugestoes}
             columnFilters={columnFilters}
             onSetColumnFilter={setColumnFilter}
             onUpdateRow={(rowId, patch) => updateRow(currentBatch.id, rowId, patch)}
+            onUpdateRowRaw={(rowId, col, val) =>
+              updateBatchRows(currentBatch.id, (rows) => rows.map((r) => (r._id === rowId ? { ...r, _raw: { ...r._raw, [col]: val } } : r)))
+            }
+            onDeleteRow={(rowId) => deleteRow(currentBatch.id, rowId)}
             onOpenDrawer={(rowId) => {
               editingRef.current = true;
               setDrawerRow({ batchId: currentBatch.id, rowId });
             }}
             onAddOption={addOption}
             onAddSugestao={addSugestao}
+            colWidths={colWidths}
+            onSetColWidth={setColWidth}
           />
         )}
       </div>
@@ -837,28 +1013,114 @@ function EmptyState() {
 }
 
 // ============================================================================
+// Add column button (popover)
+// ============================================================================
+
+function AddColumnButton({ onAdd }) {
+  const [open, setOpen] = useState(false);
+  const [val, setVal] = useState("");
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, border: "1px solid #D8D6CE", background: "#fff", borderRadius: 7, padding: "6px 10px", cursor: "pointer", color: "#54524A" }}
+      >
+        <Plus size={13} /> Coluna
+      </button>
+      {open && (
+        <div style={{ position: "absolute", top: 34, left: 0, background: "#fff", border: "1px solid #E4E2DC", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", padding: 10, zIndex: 30, minWidth: 220 }}>
+          <div style={{ fontSize: 11.5, fontWeight: 600, color: "#54524A", marginBottom: 6 }}>Nova coluna manual</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input
+              autoFocus
+              value={val}
+              onChange={(e) => setVal(e.target.value)}
+              placeholder="Nome da coluna"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && val.trim()) {
+                  onAdd(val.trim());
+                  setVal("");
+                  setOpen(false);
+                } else if (e.key === "Escape") setOpen(false);
+              }}
+              style={{ flex: 1, fontSize: 12.5, padding: "5px 7px", borderRadius: 6, border: "1px solid #D8D6CE" }}
+            />
+            <button
+              onClick={() => {
+                if (!val.trim()) return;
+                onAdd(val.trim());
+                setVal("");
+                setOpen(false);
+              }}
+              style={{ border: "none", background: "#7A1F4B", color: "#fff", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontSize: 12 }}
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
 // Columns picker
 // ============================================================================
 
-function ColumnsPicker({ columns, visible, onChange, onClose }) {
+function ColumnsPicker({ columns, visible, customCols, onChange, onMove, onDeleteCustom, onClose }) {
   function toggle(col) {
     if (visible.includes(col)) onChange(visible.filter((c) => c !== col));
     else onChange([...visible, col]);
   }
   return (
-    <div style={{ position: "absolute", top: 44, left: 130, background: "#fff", border: "1px solid #E4E2DC", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", padding: 10, zIndex: 30, maxHeight: 320, overflowY: "auto", minWidth: 240 }}>
+    <div style={{ position: "absolute", top: 44, left: 130, background: "#fff", border: "1px solid #E4E2DC", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", padding: 10, zIndex: 30, maxHeight: 380, overflowY: "auto", minWidth: 260 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-        <span style={{ fontSize: 11.5, fontWeight: 600, color: "#54524A" }}>Colunas de dados visíveis</span>
+        <span style={{ fontSize: 11.5, fontWeight: 600, color: "#54524A" }}>Colunas de dados</span>
         <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", color: "#8A8A82" }}>
           <X size={13} />
         </button>
       </div>
-      {columns.map((c) => (
-        <label key={c} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, padding: "3px 2px", cursor: "pointer" }}>
-          <input type="checkbox" checked={visible.includes(c)} onChange={() => toggle(c)} />
-          {c}
-        </label>
-      ))}
+      <div style={{ fontSize: 10.5, color: "#B0AEA4", marginBottom: 6 }}>Marque pra exibir/ocultar. Use as setas pra reordenar (só afeta colunas visíveis).</div>
+      {columns.map((c) => {
+        const isVisible = visible.includes(c);
+        const isCustom = (customCols || []).includes(c);
+        const idx = visible.indexOf(c);
+        return (
+          <div key={c} style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 2px" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, cursor: "pointer", flex: 1, minWidth: 0 }}>
+              <input type="checkbox" checked={isVisible} onChange={() => toggle(c)} />
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {c} {isCustom && <span style={{ color: "#B0AEA4" }}>(manual)</span>}
+              </span>
+            </label>
+            {isVisible && (
+              <>
+                <button
+                  disabled={idx === 0}
+                  onClick={() => onMove(c, "left")}
+                  title="Mover para a esquerda"
+                  style={{ border: "none", background: "none", cursor: idx === 0 ? "default" : "pointer", color: idx === 0 ? "#E4E2DC" : "#8A8A82", padding: 0, fontSize: 12 }}
+                >
+                  ◀
+                </button>
+                <button
+                  disabled={idx === visible.length - 1}
+                  onClick={() => onMove(c, "right")}
+                  title="Mover para a direita"
+                  style={{ border: "none", background: "none", cursor: idx === visible.length - 1 ? "default" : "pointer", color: idx === visible.length - 1 ? "#E4E2DC" : "#8A8A82", padding: 0, fontSize: 12 }}
+                >
+                  ▶
+                </button>
+              </>
+            )}
+            {isCustom && (
+              <button onClick={() => onDeleteCustom(c)} title="Excluir coluna manual" style={{ border: "none", background: "none", cursor: "pointer", color: "#C0503F", padding: 0, display: "flex" }}>
+                <Trash2 size={12} />
+              </button>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -901,30 +1163,71 @@ function FilterText({ value, onChange }) {
   );
 }
 
-function DataTable({ rows, visibleCols, optionLists, sugestoes, columnFilters, onSetColumnFilter, onUpdateRow, onOpenDrawer, onAddOption, onAddSugestao }) {
+// Cabeçalho de coluna com alça de redimensionamento (arrastar a borda direita).
+function ResizableTh({ children, style, width, onResize, minWidth = 60 }) {
+  const dragRef = useRef(null);
+  function onMouseDown(e) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = width || 140;
+    function onMove(ev) {
+      const next = Math.max(minWidth, startWidth + (ev.clientX - startX));
+      dragRef.current = next;
+      onResize(next, false);
+    }
+    function onUp() {
+      if (dragRef.current != null) onResize(dragRef.current, true);
+      dragRef.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+  return (
+    <th style={{ ...style, position: style.position || "relative", width: width || undefined, maxWidth: width || undefined, overflow: "hidden", textOverflow: "ellipsis" }}>
+      <div style={{ overflow: "hidden", textOverflow: "ellipsis", paddingRight: 8 }}>{children}</div>
+      <div
+        onMouseDown={onMouseDown}
+        title="Arraste para redimensionar"
+        style={{ position: "absolute", top: 0, right: 0, width: 6, height: "100%", cursor: "col-resize", zIndex: 4 }}
+      />
+    </th>
+  );
+}
+
+function DataTable({ rows, visibleCols, customCols, optionLists, sugestoes, columnFilters, onSetColumnFilter, onUpdateRow, onUpdateRowRaw, onDeleteRow, onOpenDrawer, onAddOption, onAddSugestao, colWidths, onSetColWidth }) {
+  const [liveWidths, setLiveWidths] = useState({});
+  function widthFor(key) {
+    return liveWidths[key] ?? colWidths?.[key];
+  }
+  function handleResize(key, px, commit) {
+    setLiveWidths((prev) => ({ ...prev, [key]: px }));
+    if (commit) onSetColWidth(key, px);
+  }
   return (
     <div style={{ overflow: "auto", height: "100%" }}>
       <table style={{ borderCollapse: "collapse", fontSize: 12.5, width: "max-content", minWidth: "100%" }}>
         <thead>
           <tr>
             <th style={{ ...th, position: "sticky", left: 0, zIndex: 3, background: "#F7F6F2" }}></th>
-            <th style={th}>Analista 1</th>
-            <th style={th}>Analista 2</th>
-            <th style={th}>Status inicial</th>
-            <th style={th}>Liminar</th>
-            <th style={th}>Ciente</th>
-            <th style={th}>Enviado</th>
+            <ResizableTh style={th} width={widthFor("meta:analista1")} onResize={(px, c) => handleResize("meta:analista1", px, c)}>Analista 1</ResizableTh>
+            <ResizableTh style={th} width={widthFor("meta:analista2")} onResize={(px, c) => handleResize("meta:analista2", px, c)}>Analista 2</ResizableTh>
+            <ResizableTh style={th} width={widthFor("meta:statusInicial")} onResize={(px, c) => handleResize("meta:statusInicial", px, c)}>Status inicial</ResizableTh>
+            <ResizableTh style={th} width={widthFor("meta:liminar")} onResize={(px, c) => handleResize("meta:liminar", px, c)}>Liminar</ResizableTh>
+            <ResizableTh style={th} width={widthFor("meta:ciente")} onResize={(px, c) => handleResize("meta:ciente", px, c)}>Ciente</ResizableTh>
+            <ResizableTh style={th} width={widthFor("meta:enviado")} onResize={(px, c) => handleResize("meta:enviado", px, c)}>Enviado</ResizableTh>
             {CITIES.map((c) => (
-              <th key={c.key} style={th}>
+              <ResizableTh key={c.key} style={th} width={widthFor(`city:${c.key}`)} onResize={(px, commit) => handleResize(`city:${c.key}`, px, commit)}>
                 Novo local · {c.label}
-              </th>
+              </ResizableTh>
             ))}
-            <th style={th}>Jira BX</th>
-            <th style={th}>Novo grupo</th>
+            <ResizableTh style={th} width={widthFor("meta:jiraBx")} onResize={(px, c) => handleResize("meta:jiraBx", px, c)}>Jira BX</ResizableTh>
+            <ResizableTh style={th} width={widthFor("meta:novoGrupo")} onResize={(px, c) => handleResize("meta:novoGrupo", px, c)}>Novo grupo</ResizableTh>
             {visibleCols.map((c) => (
-              <th key={c} style={th}>
-                {c}
-              </th>
+              <ResizableTh key={c} style={th} width={widthFor(`data:${c}`)} onResize={(px, commit) => handleResize(`data:${c}`, px, commit)}>
+                {c} {(customCols || []).includes(c) && <span style={{ color: "#B0AEA4", fontWeight: 400 }}>(manual)</span>}
+              </ResizableTh>
             ))}
           </tr>
           <tr>
@@ -985,33 +1288,59 @@ function DataTable({ rows, visibleCols, optionLists, sugestoes, columnFilters, o
           {rows.map((r) => (
             <tr key={r._id}>
               <td style={{ ...td, position: "sticky", left: 0, background: "#fff", zIndex: 1 }}>
-                <button onClick={() => onOpenDrawer(r._id)} title="Mensagem / contato" style={{ border: "none", background: "#EFEDE6", borderRadius: 6, padding: 5, cursor: "pointer", display: "flex", color: "#54524A" }}>
-                  <MessageSquare size={13} />
-                </button>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <button
+                    onClick={() => onOpenDrawer(r._id)}
+                    title={r.enviado ? "Mensagem já enviada — clique para revisar" : "Montar e enviar mensagem de deslocamento"}
+                    style={{
+                      border: "none",
+                      background: r.enviado ? "#EAF7F1" : "#F21075",
+                      borderRadius: 6,
+                      padding: "5px 7px",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 5,
+                      color: r.enviado ? "#3FA789" : "#fff",
+                      boxShadow: r.enviado ? "none" : "0 0 0 2px rgba(242,16,117,0.18)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {r.enviado ? <Check size={13} /> : <MessageSquare size={13} />}
+                  </button>
+                  <button
+                    onClick={() => onDeleteRow(r._id)}
+                    title="Excluir linha"
+                    style={{ border: "none", background: "none", cursor: "pointer", color: "#C4A8B4", display: "flex", padding: 2 }}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
               </td>
-              <td style={td}>
+              <td style={{ ...td, width: widthFor("meta:analista1"), maxWidth: widthFor("meta:analista1"), overflow: "hidden" }}>
                 <EditableSelect value={r.analista1} options={optionLists.analistas} onChange={(v) => onUpdateRow(r._id, { analista1: v })} onAddOption={(v) => onAddOption("analistas", v)} placeholder="—" />
               </td>
-              <td style={td}>
+              <td style={{ ...td, width: widthFor("meta:analista2"), maxWidth: widthFor("meta:analista2"), overflow: "hidden" }}>
                 <EditableSelect value={r.analista2} options={optionLists.analistas} onChange={(v) => onUpdateRow(r._id, { analista2: v })} onAddOption={(v) => onAddOption("analistas", v)} placeholder="—" />
               </td>
-              <td style={td}>
+              <td style={{ ...td, width: widthFor("meta:statusInicial"), maxWidth: widthFor("meta:statusInicial"), overflow: "hidden" }}>
                 <EditableSelect value={r.statusInicial} options={optionLists.status} onChange={(v) => onUpdateRow(r._id, { statusInicial: v })} onAddOption={(v) => onAddOption("status", v)} placeholder="—" />
               </td>
-              <td style={td}>
+              <td style={{ ...td, width: widthFor("meta:liminar"), maxWidth: widthFor("meta:liminar"), overflow: "hidden" }}>
                 <EditableSelect value={r.liminar} options={optionLists.liminar} onChange={(v) => onUpdateRow(r._id, { liminar: v, liminarManual: true })} onAddOption={(v) => onAddOption("liminar", v)} colorize />
               </td>
-              <td style={{ ...td, textAlign: "center" }}>
+              <td style={{ ...td, width: widthFor("meta:ciente"), maxWidth: widthFor("meta:ciente"), textAlign: "center" }}>
                 <input type="checkbox" checked={r.motoristaCiente} onChange={(e) => onUpdateRow(r._id, { motoristaCiente: e.target.checked })} />
               </td>
-              <td style={{ ...td, textAlign: "center" }}>
+              <td style={{ ...td, width: widthFor("meta:enviado"), maxWidth: widthFor("meta:enviado"), textAlign: "center" }}>
                 <input type="checkbox" checked={r.enviado} onChange={(e) => onUpdateRow(r._id, { enviado: e.target.checked })} />
               </td>
               {CITIES.map((c) => {
                 const field = CITY_FIELD_MAP[c.key];
                 const opts = r.novoLocalOptions?.[c.key] || [];
+                const w = widthFor(`city:${c.key}`);
                 return (
-                  <td key={c.key} style={td}>
+                  <td key={c.key} style={{ ...td, width: w, maxWidth: w, overflow: "hidden" }}>
                     <EditableSelect
                       value={r[field]}
                       options={opts}
@@ -1023,22 +1352,22 @@ function DataTable({ rows, visibleCols, optionLists, sugestoes, columnFilters, o
                   </td>
                 );
               })}
-              <td style={td}>
+              <td style={{ ...td, width: widthFor("meta:jiraBx"), maxWidth: widthFor("meta:jiraBx"), overflow: "hidden" }}>
                 <input
                   value={r.jiraBx}
                   onChange={(e) => onUpdateRow(r._id, { jiraBx: e.target.value })}
                   placeholder="—"
-                  style={{ border: "1px solid transparent", background: "transparent", fontSize: 12.5, width: 110, padding: "3px 5px", borderRadius: 5 }}
+                  style={{ border: "1px solid transparent", background: "transparent", fontSize: 12.5, width: "100%", padding: "3px 5px", borderRadius: 5, boxSizing: "border-box" }}
                   onFocus={(e) => (e.target.style.border = "1px solid #D8D6CE")}
                   onBlur={(e) => (e.target.style.border = "1px solid transparent")}
                 />
               </td>
-              <td style={td}>
+              <td style={{ ...td, width: widthFor("meta:novoGrupo"), maxWidth: widthFor("meta:novoGrupo"), overflow: "hidden" }}>
                 <input
                   value={r.novoGrupo}
                   onChange={(e) => onUpdateRow(r._id, { novoGrupo: e.target.value })}
                   placeholder="—"
-                  style={{ border: "1px solid transparent", background: "transparent", fontSize: 12.5, width: 130, padding: "3px 5px", borderRadius: 5 }}
+                  style={{ border: "1px solid transparent", background: "transparent", fontSize: 12.5, width: "100%", padding: "3px 5px", borderRadius: 5, boxSizing: "border-box" }}
                   onFocus={(e) => (e.target.style.border = "1px solid #D8D6CE")}
                   onBlur={(e) => (e.target.style.border = "1px solid transparent")}
                 />
@@ -1047,8 +1376,24 @@ function DataTable({ rows, visibleCols, optionLists, sugestoes, columnFilters, o
                 const raw = r._raw[c];
                 const str = String(raw ?? "");
                 const isLink = /^https?:\/\//i.test(str);
+                const isCustom = (customCols || []).includes(c);
+                const w = widthFor(`data:${c}`) || 260;
+                if (isCustom) {
+                  return (
+                    <td key={c} style={{ ...td, width: w, maxWidth: w, overflow: "hidden" }}>
+                      <input
+                        value={str}
+                        onChange={(e) => onUpdateRowRaw(r._id, c, e.target.value)}
+                        placeholder="—"
+                        style={{ border: "1px solid transparent", background: "transparent", fontSize: 12.5, width: "100%", padding: "3px 5px", borderRadius: 5, boxSizing: "border-box" }}
+                        onFocus={(e) => (e.target.style.border = "1px solid #D8D6CE")}
+                        onBlur={(e) => (e.target.style.border = "1px solid transparent")}
+                      />
+                    </td>
+                  );
+                }
                 return (
-                  <td key={c} style={{ ...td, color: "#54524A", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }}>
+                  <td key={c} style={{ ...td, color: "#54524A", width: w, maxWidth: w, overflow: "hidden", textOverflow: "ellipsis" }}>
                     {isLink ? (
                       <a href={str} target="_blank" rel="noreferrer" style={{ color: "#7A1F4B" }}>
                         {str}
