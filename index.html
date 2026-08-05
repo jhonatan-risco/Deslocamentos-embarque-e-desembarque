@@ -276,7 +276,8 @@ async function parseSimpleList(file) {
 function defaultState() {
   return {
     batches: [],
-    currentBatchId: null,
+    // currentBatchId NÃO fica aqui de propósito — é navegação local de cada pessoa,
+    // não um dado compartilhado. Ver estado separado `currentBatchId` dentro de App().
     optionLists: { analistas: DEFAULT_ANALISTAS, status: DEFAULT_STATUS_OPTIONS, liminar: DEFAULT_LIMINAR_OPTIONS },
     liminarRefLists: { propria: LIMINAR_PROPRIA_DEFAULT, atipesp: LIMINAR_ATIPESP_DEFAULT, abrafrec: LIMINAR_ABRAFREC_DEFAULT },
     sugestoes: DEFAULT_SUGESTOES,
@@ -373,6 +374,24 @@ function App() {
   const [lastSynced, setLastSynced] = useState(null);
   const [syncing, setSyncing] = useState(false);
 
+  // Navegação (qual aba está aberta) é local de cada navegador — nunca sincronizada
+  // com o backend, pra não fazer a troca de aba de uma pessoa mudar a tela de outra.
+  const [currentBatchId, setCurrentBatchId] = useState(() => {
+    try {
+      return localStorage.getItem("deslocamentos_currentBatchId") || null;
+    } catch (e) {
+      return null;
+    }
+  });
+  useEffect(() => {
+    try {
+      if (currentBatchId) localStorage.setItem("deslocamentos_currentBatchId", currentBatchId);
+      else localStorage.removeItem("deslocamentos_currentBatchId");
+    } catch (e) {
+      /* ignore (ex: navegação privada sem acesso a localStorage) */
+    }
+  }, [currentBatchId]);
+
   const [importError, setImportError] = useState("");
   const [importing, setImporting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -456,7 +475,7 @@ function App() {
     });
   }
 
-  const { batches, currentBatchId, optionLists, liminarRefLists, sugestoes, visibleColsByBatch, shortLinks, colWidths, customColumnsByBatch } = state;
+  const { batches, optionLists, liminarRefLists, sugestoes, visibleColsByBatch, shortLinks, colWidths, customColumnsByBatch } = state;
   const currentBatch = batches.find((b) => b.id === currentBatchId) || null;
 
   useEffect(() => {
@@ -537,8 +556,8 @@ function App() {
         ...prev,
         batches: [...prev.batches, newBatch],
         visibleColsByBatch: { ...prev.visibleColsByBatch, [batchId]: visible },
-        currentBatchId: batchId,
       }));
+      setCurrentBatchId(batchId);
     } catch (err) {
       console.error(err);
       setImportError("Não consegui ler esse arquivo. Confirme se é um .csv ou .xlsx válido.");
@@ -549,13 +568,16 @@ function App() {
   }
 
   function removeBatch(batchId) {
-    update((prev) => {
-      const batches2 = prev.batches.filter((b) => b.id !== batchId);
-      return {
-        ...prev,
-        batches: batches2,
-        currentBatchId: prev.currentBatchId === batchId ? batches2[0]?.id ?? null : prev.currentBatchId,
-      };
+    update((prev) => ({
+      ...prev,
+      batches: prev.batches.filter((b) => b.id !== batchId),
+    }));
+    // Se a aba removida era a que EU estava vendo, saio dela localmente.
+    // Isso não afeta a navegação de mais ninguém.
+    setCurrentBatchId((prevLocal) => {
+      if (prevLocal !== batchId) return prevLocal;
+      const remaining = batches.filter((b) => b.id !== batchId);
+      return remaining[0]?.id ?? null;
     });
   }
 
@@ -879,7 +901,7 @@ function App() {
             key={b.id}
             batch={b}
             active={b.id === currentBatchId}
-            onSelect={() => update((prev) => ({ ...prev, currentBatchId: b.id }))}
+            onSelect={() => setCurrentBatchId(b.id)}
             onRename={(name) => renameBatch(b.id, name)}
             onRemove={() => {
               if (window.confirm(`Remover a aba "${b.name}"? Isso apaga os dados e edições desse lote para todo mundo.`)) removeBatch(b.id);
