@@ -113,7 +113,23 @@ const PREFERRED_DATA_COLUMNS = [
 // funciona só localmente nesta sessão, sem salvar nem sincronizar com ninguém.
 // ----------------------------------------------------------------------------
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxGaWTgGyvbyArFJ1ZwkNJv36hmE3vsDpM4TC8IXcWC6RoUcOykHVKcg2FGp9wgG6aVRA/exec";
-const POLL_INTERVAL_MS = 3000;
+const POLL_INTERVAL_MS = 6000;
+const PRESENCE_POLL_MS = 8000; // com que frequência avisa "estou aqui" e busca quem mais está online
+const PRESENCE_STALE_MS = 30000; // se não vê heartbeat de alguém há mais que isso, considera offline (segurança extra do lado do navegador)
+
+// Cor estável por pessoa (mesmo nome/id sempre gera a mesma cor), pro avatar.
+const AVATAR_COLORS = ["#F21075", "#7A1F4B", "#3FA789", "#B8791E", "#8A5FB0", "#3B5773", "#C0503F"];
+function colorForId(id) {
+  let hash = 0;
+  const s = String(id || "");
+  for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+}
+function initialsFor(name) {
+  const parts = String(name || "?").trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
 
 function isBackendConfigured() {
   return Boolean(APPS_SCRIPT_URL && APPS_SCRIPT_URL.startsWith("http"));
@@ -286,6 +302,101 @@ function defaultState() {
     colWidths: {}, // { [colKey]: px } - largura customizada de qualquer coluna (meta ou de dados)
     customColumnsByBatch: {}, // { [batchId]: [colName, ...] } - colunas criadas manualmente pelo time (editáveis, podem ser excluídas)
   };
+}
+
+// ============================================================================
+// Avatares de quem está online agora
+// ============================================================================
+
+function OnlineAvatars({ onlineUsers, myId, myName }) {
+  const entries = Object.entries(onlineUsers || {});
+  // Eu sempre apareço primeiro (mesmo no instante antes do primeiro heartbeat responder).
+  const others = entries.filter(([id]) => id !== myId);
+  const list = myName ? [[myId, { name: myName + " (você)" }], ...others] : others;
+  if (!list.length) return null;
+  const MAX_SHOWN = 6;
+  const shown = list.slice(0, MAX_SHOWN);
+  const extra = list.length - shown.length;
+  return (
+    <div style={{ display: "flex", alignItems: "center", marginLeft: 4 }}>
+      {shown.map(([id, u], i) => (
+        <div
+          key={id}
+          title={u.name}
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: "50%",
+            background: colorForId(id),
+            color: "#fff",
+            fontSize: 9.5,
+            fontWeight: 700,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            border: "2px solid #2B0A1E",
+            marginLeft: i === 0 ? 0 : -7,
+            flexShrink: 0,
+          }}
+        >
+          {initialsFor(u.name)}
+        </div>
+      ))}
+      {extra > 0 && (
+        <div
+          title={`+${extra} online`}
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: "50%",
+            background: "#54524A",
+            color: "#fff",
+            fontSize: 9,
+            fontWeight: 700,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            border: "2px solid #2B0A1E",
+            marginLeft: -7,
+            flexShrink: 0,
+          }}
+        >
+          +{extra}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NamePromptModal({ onSave }) {
+  const [val, setVal] = useState("");
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(22,31,43,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 70 }}>
+      <div style={{ background: "#fff", borderRadius: 14, padding: 22, width: 340, maxWidth: "90vw" }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: "#22221F", marginBottom: 6 }}>Como você quer aparecer pros outros analistas?</div>
+        <div style={{ fontSize: 12, color: "#8A8A82", marginBottom: 14 }}>
+          Esse nome aparece como uma bolinha no topo do painel enquanto você estiver com ele aberto, pra todo mundo saber quem mais está trabalhando agora.
+        </div>
+        <input
+          autoFocus
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          placeholder="Seu nome"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && val.trim()) onSave(val);
+          }}
+          style={{ width: "100%", padding: "9px 10px", borderRadius: 8, border: "1px solid #D8D6CE", fontSize: 13, boxSizing: "border-box", marginBottom: 12 }}
+        />
+        <button
+          onClick={() => val.trim() && onSave(val)}
+          disabled={!val.trim()}
+          style={{ width: "100%", padding: "9px 10px", borderRadius: 8, border: "none", background: val.trim() ? "#7A1F4B" : "#D8D6CE", color: "#fff", fontWeight: 600, fontSize: 13, cursor: val.trim() ? "pointer" : "default" }}
+        >
+          Confirmar
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // ============================================================================
@@ -474,6 +585,91 @@ function App() {
       return next;
     });
   }
+
+  // Identidade local (quem sou eu, pros outros verem online) - guardada só
+  // neste navegador, nunca faz parte do estado sincronizado principal.
+  const [myId] = useState(() => {
+    try {
+      let id = localStorage.getItem("deslocamentos_userId");
+      if (!id) {
+        id = uid();
+        localStorage.setItem("deslocamentos_userId", id);
+      }
+      return id;
+    } catch (e) {
+      return uid();
+    }
+  });
+  const [myName, setMyName] = useState(() => {
+    try {
+      return localStorage.getItem("deslocamentos_userName") || "";
+    } catch (e) {
+      return "";
+    }
+  });
+  const [namePromptOpen, setNamePromptOpen] = useState(false);
+  const [onlineUsers, setOnlineUsers] = useState({});
+
+  useEffect(() => {
+    if (isBackendConfigured() && !myName) setNamePromptOpen(true);
+  }, [myName]);
+
+  function saveMyName(name) {
+    const clean = String(name || "").trim();
+    if (!clean) return;
+    try {
+      localStorage.setItem("deslocamentos_userName", clean);
+    } catch (e) {
+      /* ignore */
+    }
+    setMyName(clean);
+    setNamePromptOpen(false);
+  }
+
+  // Heartbeat: avisa periodicamente "estou aqui" e busca quem mais está online.
+  useEffect(() => {
+    if (!isBackendConfigured() || !myName) return;
+    let cancelled = false;
+
+    async function beat() {
+      try {
+        await fetch(`${APPS_SCRIPT_URL}?action=presence`, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ id: myId, name: myName }),
+        });
+      } catch (e) {
+        /* silencioso - presença é um "nice to have", não deve gerar alarde de erro */
+      }
+    }
+
+    async function refresh() {
+      try {
+        const res = await fetch(`${APPS_SCRIPT_URL}?action=presence&t=${Date.now()}`);
+        const data = await res.json();
+        if (cancelled) return;
+        const now = Date.now();
+        const filtered = {};
+        for (const id in data) {
+          if (data[id] && now - data[id].lastSeen < PRESENCE_STALE_MS) filtered[id] = data[id];
+        }
+        setOnlineUsers(filtered);
+      } catch (e) {
+        /* silencioso */
+      }
+    }
+
+    beat();
+    refresh();
+    const interval = setInterval(() => {
+      beat();
+      refresh();
+    }, PRESENCE_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [myId, myName]);
 
   const { batches, optionLists, liminarRefLists, sugestoes, visibleColsByBatch, shortLinks, colWidths, customColumnsByBatch } = state;
   const currentBatch = batches.find((b) => b.id === currentBatchId) || null;
@@ -838,6 +1034,7 @@ function App() {
             <span style={{ fontSize: 12.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "#C79AB0" }}>
               Controle de deslocamentos
             </span>
+            <OnlineAvatars onlineUsers={onlineUsers} myId={myId} myName={myName} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 11.5, color: "#C79AB0" }}>
             <Users size={13} />
@@ -989,6 +1186,8 @@ function App() {
           />
         )}
       </div>
+
+      {namePromptOpen && <NamePromptModal onSave={saveMyName} />}
 
       {settingsOpen && (
         <SettingsModal
