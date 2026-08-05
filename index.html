@@ -1233,9 +1233,10 @@ function DataTable({ rows, visibleCols, customCols, optionLists, sugestoes, colu
     "meta:jiraBx", "meta:novoGrupo",
     ...visibleCols.map((c) => `data:${c}`),
   ];
+  const totalTableWidth = colKeys.reduce((sum, k) => sum + (k ? widthFor(k) : ACTION_COL_WIDTH), 0);
   return (
     <div style={{ overflow: "auto", height: "100%" }}>
-      <table style={{ borderCollapse: "collapse", fontSize: 12.5, tableLayout: "fixed" }}>
+      <table style={{ borderCollapse: "collapse", fontSize: 12.5, tableLayout: "fixed", width: totalTableWidth }}>
         <colgroup>
           {colKeys.map((k, i) => (
             <col key={i} style={{ width: k ? widthFor(k) : ACTION_COL_WIDTH }} />
