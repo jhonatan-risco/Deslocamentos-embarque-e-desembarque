@@ -1196,18 +1196,51 @@ function ResizableTh({ children, style, width, onResize, minWidth = 60 }) {
   );
 }
 
+const DEFAULT_COL_WIDTHS = {
+  "meta:analista1": 140,
+  "meta:analista2": 140,
+  "meta:statusInicial": 140,
+  "meta:liminar": 150,
+  "meta:ciente": 70,
+  "meta:enviado": 70,
+  "city:sp": 190,
+  "city:campinas": 190,
+  "city:sjc": 190,
+  "city:americana": 190,
+  "meta:jiraBx": 110,
+  "meta:novoGrupo": 130,
+};
+const DEFAULT_DATA_COL_WIDTH = 220;
+const ACTION_COL_WIDTH = 52;
+
 function DataTable({ rows, visibleCols, customCols, optionLists, sugestoes, columnFilters, onSetColumnFilter, onUpdateRow, onUpdateRowRaw, onDeleteRow, onOpenDrawer, onAddOption, onAddSugestao, colWidths, onSetColWidth }) {
   const [liveWidths, setLiveWidths] = useState({});
   function widthFor(key) {
-    return liveWidths[key] ?? colWidths?.[key];
+    const custom = liveWidths[key] ?? colWidths?.[key];
+    if (custom) return custom;
+    if (DEFAULT_COL_WIDTHS[key] != null) return DEFAULT_COL_WIDTHS[key];
+    if (key.startsWith("data:")) return DEFAULT_DATA_COL_WIDTH;
+    return 140;
   }
   function handleResize(key, px, commit) {
     setLiveWidths((prev) => ({ ...prev, [key]: px }));
     if (commit) onSetColWidth(key, px);
   }
+  const colKeys = [
+    null,
+    "meta:analista1", "meta:analista2", "meta:statusInicial", "meta:liminar", "meta:ciente", "meta:enviado",
+    ...CITIES.map((c) => `city:${c.key}`),
+    "meta:jiraBx", "meta:novoGrupo",
+    ...visibleCols.map((c) => `data:${c}`),
+  ];
   return (
     <div style={{ overflow: "auto", height: "100%" }}>
-      <table style={{ borderCollapse: "collapse", fontSize: 12.5, width: "max-content", minWidth: "100%" }}>
+      <table style={{ borderCollapse: "collapse", fontSize: 12.5, tableLayout: "fixed" }}>
+        <colgroup>
+          {colKeys.map((k, i) => (
+            <col key={i} style={{ width: k ? widthFor(k) : ACTION_COL_WIDTH }} />
+          ))}
+        </colgroup>
         <thead>
           <tr>
             <th style={{ ...th, position: "sticky", left: 0, zIndex: 3, background: "#F7F6F2" }}></th>
@@ -1460,7 +1493,7 @@ function EditableSelect({ value, options, onChange, onAddOption, placeholder, co
         if (e.target.value === "__add__") setAdding(true);
         else onChange(e.target.value);
       }}
-      style={{ fontSize: 12.5, padding: "4px 6px", borderRadius: 6, border: "1px solid #D8D6CE", background: colors ? colors.bg : "#fff", color: colors ? colors.color : "#22221F", fontWeight: colors ? 600 : 400, minWidth: 130, maxWidth: 180 }}
+      style={{ fontSize: 12.5, padding: "4px 6px", borderRadius: 6, border: "1px solid #D8D6CE", background: colors ? colors.bg : "#fff", color: colors ? colors.color : "#22221F", fontWeight: colors ? 600 : 400, width: "100%", boxSizing: "border-box" }}
     >
       <option value="">{placeholder || "Selecionar..."}</option>
       {allOptions.map((o) => (
