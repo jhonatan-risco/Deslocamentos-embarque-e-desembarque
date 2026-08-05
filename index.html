@@ -1556,8 +1556,8 @@ function DataTable({ rows, visibleCols, customCols, optionLists, sugestoes, colu
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r._id}>
-              <td style={{ ...td, position: "sticky", left: 0, background: "#fff", zIndex: 1 }}>
+            <tr key={r._id} style={{ background: r.enviado ? "#E3F5EC" : undefined }}>
+              <td style={{ ...td, position: "sticky", left: 0, background: r.enviado ? "#E3F5EC" : "#fff", zIndex: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                   <button
                     onClick={() => onOpenDrawer(r._id)}
